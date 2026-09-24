@@ -1,0 +1,894 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Toy ViT：从 PyTorch 到 Coral NPU 仿真 · 全流程与中间产物</title>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js" integrity="sha384-ZZ1pncU3bQe8y31yfZdMFdSpttDoPmOZg2wguVK9almUodir1PghgT0eY7Mrty8H" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js" integrity="sha384-en/ztfPSRkGfME4KIm05joYXynqzUgbsG5nMrj/xEFAHXkeZfO3yMK8QQ+mP7p1/" crossorigin="anonymous"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: 'JetBrains Mono', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', monospace;
+      background: #020617;
+      min-height: 100vh;
+      padding: 2rem;
+      color: white;
+    }
+
+    .container { max-width: 1280px; margin: 0 auto; }
+
+    .header { margin-bottom: 2rem; }
+
+    .header-row {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .pulse-dot {
+      width: 12px; height: 12px;
+      background: #22d3ee;
+      border-radius: 50%;
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+
+    h1 { font-size: 1.5rem; font-weight: 700; letter-spacing: -0.025em; }
+
+    .subtitle { color: #94a3b8; font-size: 0.875rem; margin-left: 1.75rem; }
+
+    .section-title {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      font-size: 1.05rem;
+      font-weight: 700;
+      margin: 2.5rem 0 1rem 0;
+    }
+
+    .section-title .num {
+      color: #020617;
+      font-size: 0.8rem;
+      font-weight: 700;
+      padding: 0.15rem 0.5rem;
+      border-radius: 0.375rem;
+      flex-shrink: 0;
+    }
+
+    .section-title .num.cyan { background: #22d3ee; }
+    .section-title .num.amber { background: #fbbf24; }
+    .section-title .num.violet { background: #a78bfa; }
+    .section-title .num.rose { background: #fb7185; }
+    .section-title .num.emerald { background: #34d399; }
+
+    .section-title .hint {
+      color: #64748b;
+      font-size: 0.75rem;
+      font-weight: 400;
+    }
+
+    .diagram-container {
+      background: rgba(15, 23, 42, 0.5);
+      border-radius: 1rem;
+      border: 1px solid #1e293b;
+      padding: 1.5rem;
+      overflow-x: auto;
+    }
+
+    svg { width: 100%; min-width: 1000px; display: block; }
+
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 1rem;
+      margin-top: 1rem;
+    }
+
+    .card {
+      background: rgba(15, 23, 42, 0.5);
+      border-radius: 0.75rem;
+      border: 1px solid #1e293b;
+      padding: 1.25rem;
+    }
+
+    .card-header {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin-bottom: 0.75rem;
+    }
+
+    .card-dot { width: 8px; height: 8px; border-radius: 50%; }
+    .card-dot.cyan { background: #22d3ee; }
+    .card-dot.emerald { background: #34d399; }
+    .card-dot.violet { background: #a78bfa; }
+    .card-dot.amber { background: #fbbf24; }
+    .card-dot.rose { background: #fb7185; }
+
+    .card h3 { font-size: 0.875rem; font-weight: 600; }
+
+    .card ul { list-style: none; color: #94a3b8; font-size: 0.75rem; }
+    .card li { margin-bottom: 0.375rem; line-height: 1.5; }
+
+    .footer {
+      text-align: center;
+      margin-top: 1.5rem;
+      color: #475569;
+      font-size: 0.75rem;
+    }
+
+    .toolbar {
+      display: flex;
+      gap: 0.5rem;
+      margin-left: auto;
+      flex-shrink: 0;
+      align-items: center;
+    }
+    .toolbar-toggle {
+      background: transparent;
+      border: none;
+      color: #475569;
+      cursor: pointer;
+      font-size: 1.25rem;
+      line-height: 1;
+      padding: 0.25rem 0.5rem;
+      border-radius: 0.375rem;
+      transition: color 0.2s, background 0.2s;
+    }
+    .toolbar-toggle:hover { color: #94a3b8; background: rgba(30, 41, 59, 0.5); }
+    .toolbar-actions { display: none; gap: 0.5rem; }
+    .toolbar.expanded .toolbar-actions { display: flex; }
+    .toolbar-actions button {
+      background: rgba(30, 41, 59, 0.8);
+      border: 1px solid #334155;
+      color: #94a3b8;
+      padding: 0.375rem 0.75rem;
+      border-radius: 0.375rem;
+      font-family: inherit;
+      font-size: 0.75rem;
+      cursor: pointer;
+      transition: all 0.2s;
+      white-space: nowrap;
+    }
+    .toolbar-actions button:hover {
+      background: rgba(51, 65, 85, 0.8);
+      color: white;
+      border-color: #475569;
+    }
+
+    @media print {
+      body { background: #020617; padding: 1rem; }
+      .toolbar { display: none !important; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container" id="report-container">
+    <!-- Header -->
+    <div class="header">
+      <div class="header-row">
+        <div class="pulse-dot"></div>
+        <h1>Toy ViT：从 PyTorch 到 Coral NPU 仿真</h1>
+        <div class="toolbar">
+          <div class="toolbar-actions">
+            <button onclick="copyAsImage(this)">📋 Copy</button>
+            <button onclick="downloadPNG(this)">🖼️ PNG</button>
+            <button onclick="downloadPDF(this)">📄 PDF</button>
+          </div>
+          <button class="toolbar-toggle" onclick="this.parentElement.classList.toggle('expanded')" title="Export options" aria-label="Export options">⋯</button>
+        </div>
+      </div>
+      <p class="subtitle">实现级视图 · 每个数字都来自本机实测产物（toy-vit/out_torch 与容器内 ~/work/vit-torch/stages）· PyTorch 2.14 + torch-mlir → coralnpu-compile → MPACT</p>
+    </div>
+
+    <h2 class="section-title"><span class="num cyan">图一</span>全景：九步、三个阶段、每步的产物<span class="hint">前端 · 编译器 · 运行</span></h2>
+<div class="diagram-container">
+<svg viewBox="0 0 1200 750">
+<defs>
+          <marker id="arrowhead" markerWidth="7" markerHeight="5" refX="6" refY="2.5" orient="auto">
+            <polygon points="0 0, 7 2.5, 0 5" fill="#94a3b8" />
+          </marker>
+          <marker id="arrow-cyan" markerWidth="7" markerHeight="5" refX="6" refY="2.5" orient="auto">
+            <polygon points="0 0, 7 2.5, 0 5" fill="#22d3ee" />
+          </marker>
+          <marker id="arrow-emerald" markerWidth="7" markerHeight="5" refX="6" refY="2.5" orient="auto">
+            <polygon points="0 0, 7 2.5, 0 5" fill="#34d399" />
+          </marker>
+          <marker id="arrow-amber" markerWidth="7" markerHeight="5" refX="6" refY="2.5" orient="auto">
+            <polygon points="0 0, 7 2.5, 0 5" fill="#fbbf24" />
+          </marker>
+          <marker id="arrow-violet" markerWidth="7" markerHeight="5" refX="6" refY="2.5" orient="auto">
+            <polygon points="0 0, 7 2.5, 0 5" fill="#a78bfa" />
+          </marker>
+          <marker id="arrow-rose" markerWidth="7" markerHeight="5" refX="6" refY="2.5" orient="auto">
+            <polygon points="0 0, 7 2.5, 0 5" fill="#fb7185" />
+          </marker>
+          <marker id="arrow-orange" markerWidth="7" markerHeight="5" refX="6" refY="2.5" orient="auto">
+            <polygon points="0 0, 7 2.5, 0 5" fill="#fb923c" />
+          </marker>
+          <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+            <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#1e293b" stroke-width="0.5"/>
+          </pattern>
+        </defs>
+<rect width="100%" height="100%" fill="url(#grid)" />
+<rect x="40" y="30" width="1120" height="200" rx="12" fill="rgba(8,51,68,0.10)" stroke="#22d3ee" stroke-width="1" stroke-dasharray="8,4"/><text x="54" y="52" fill="#22d3ee" font-size="11" font-weight="600" xml:space="preserve">① 前端：PyTorch → StableHLO —— 容器内 venv-torch，一次 fx.export_and_import() 调用内部走完三步</text>
+<rect x="60" y="78" width="230" height="84" rx="6" fill="#0f172a"/><rect x="60" y="78" width="230" height="84" rx="6" fill="rgba(8,51,68,0.45)" stroke="#22d3ee" stroke-width="1.5"/><text x="175.0" y="99" fill="white" font-size="10.5" font-weight="600" text-anchor="middle" xml:space="preserve">1 · PyTorch 模型</text><text x="175.0" y="115" fill="#94a3b8" font-size="8" text-anchor="middle" xml:space="preserve">vit_torch.py · nn.Module · eval()</text><text x="175.0" y="128" fill="#94a3b8" font-size="8" text-anchor="middle" xml:space="preserve">23,968 个参数 · 输入 1×32×32×3</text><text x="175.0" y="153" fill="#fbbf24" font-size="8" font-weight="600" text-anchor="middle" xml:space="preserve">产物 ref_in.npy / ref_out.npy</text>
+<rect x="330" y="78" width="230" height="84" rx="6" fill="#0f172a"/><rect x="330" y="78" width="230" height="84" rx="6" fill="rgba(8,51,68,0.45)" stroke="#22d3ee" stroke-width="1.5"/><text x="445.0" y="99" fill="white" font-size="10.5" font-weight="600" text-anchor="middle" xml:space="preserve">2 · torch.export 捕获图</text><text x="445.0" y="115" fill="#94a3b8" font-size="8" text-anchor="middle" xml:space="preserve">动态图追踪成静态 FX 图</text><text x="445.0" y="128" fill="#94a3b8" font-size="8" text-anchor="middle" xml:space="preserve">111 个节点 · 17 种 ATen 算子</text><text x="445.0" y="153" fill="#fbbf24" font-size="8" font-weight="600" text-anchor="middle" xml:space="preserve">产物 ExportedProgram（内存对象）</text>
+<rect x="600" y="78" width="230" height="84" rx="6" fill="#0f172a"/><rect x="600" y="78" width="230" height="84" rx="6" fill="rgba(8,51,68,0.45)" stroke="#22d3ee" stroke-width="1.5"/><text x="715.0" y="99" fill="white" font-size="10.5" font-weight="600" text-anchor="middle" xml:space="preserve">3 · 导入 Torch 方言</text><text x="715.0" y="115" fill="#94a3b8" font-size="8" text-anchor="middle" xml:space="preserve">FX 节点逐个翻译为 MLIR</text><text x="715.0" y="128" fill="#94a3b8" font-size="8" text-anchor="middle" xml:space="preserve">190 个 torch.aten.* 算子</text><text x="715.0" y="153" fill="#fbbf24" font-size="8" font-weight="600" text-anchor="middle" xml:space="preserve">产物 vit.torch_dialect.mlir · 231 KB</text>
+<rect x="870" y="78" width="230" height="84" rx="6" fill="#0f172a"/><rect x="870" y="78" width="230" height="84" rx="6" fill="rgba(120,53,15,0.4)" stroke="#fbbf24" stroke-width="1.5"/><text x="985.0" y="99" fill="white" font-size="10.5" font-weight="600" text-anchor="middle" xml:space="preserve">4 · 降级到 StableHLO</text><text x="985.0" y="115" fill="#94a3b8" font-size="8" text-anchor="middle" xml:space="preserve">aten.mm→dot_general 等改写</text><text x="985.0" y="128" fill="#94a3b8" font-size="8" text-anchor="middle" xml:space="preserve">297 个算子 · 权重 27 块内嵌</text><text x="985.0" y="153" fill="#fbbf24" font-size="8" font-weight="600" text-anchor="middle" xml:space="preserve">产物 vit.mlir · 220 KB</text>
+<line x1="294" y1="120" x2="326" y2="120" stroke="#22d3ee" stroke-width="1.5" marker-end="url(#arrow-cyan)"/>
+<line x1="564" y1="120" x2="596" y2="120" stroke="#22d3ee" stroke-width="1.5" marker-end="url(#arrow-cyan)"/>
+<line x1="834" y1="120" x2="866" y2="120" stroke="#22d3ee" stroke-width="1.5" marker-end="url(#arrow-cyan)"/>
+<text x="60" y="186" fill="#64748b" font-size="8" xml:space="preserve">口径：图中所有“算子数 / 节点数”均为整个模型一次前向的总数，来自对产物文件的 grep 统计</text>
+<text x="60" y="204" fill="#64748b" font-size="8" xml:space="preserve">前端与编译器之间唯一的接口是 vit.mlir 这个文本文件 —— JAX 路线也产出同一种文件，之后完全共用</text>
+<rect x="40" y="260" width="1120" height="200" rx="12" fill="rgba(6,78,59,0.08)" stroke="#34d399" stroke-width="1" stroke-dasharray="8,4"/><text x="54" y="282" fill="#34d399" font-size="11" font-weight="600" xml:space="preserve">② 编译器：coralnpu-compile —— 一条命令内部的四个阶段（回程：自右向左），用 --compile-to 逐段导出</text>
+<rect x="920" y="308" width="190" height="84" rx="6" fill="#0f172a"/><rect x="920" y="308" width="190" height="84" rx="6" fill="rgba(6,78,59,0.4)" stroke="#34d399" stroke-width="1.5"/><text x="1015.0" y="329" fill="white" font-size="10.5" font-weight="600" text-anchor="middle" xml:space="preserve">5 · 输入降级 → linalg</text><text x="1015.0" y="345" fill="#94a3b8" font-size="8" text-anchor="middle" xml:space="preserve">StableHLO 插件改写成循环描述</text><text x="1015.0" y="358" fill="#94a3b8" font-size="8" text-anchor="middle" xml:space="preserve">174 generic + 42 个命名算子</text><text x="1015.0" y="383" fill="#fbbf24" font-size="8" font-weight="600" text-anchor="middle" xml:space="preserve">产物 input.mlir · 93 KB</text>
+<rect x="705" y="308" width="190" height="84" rx="6" fill="#0f172a"/><rect x="705" y="308" width="190" height="84" rx="6" fill="rgba(6,78,59,0.4)" stroke="#34d399" stroke-width="1.5"/><text x="800.0" y="329" fill="white" font-size="10.5" font-weight="600" text-anchor="middle" xml:space="preserve">6 · 切分 dispatch</text><text x="800.0" y="345" fill="#94a3b8" font-size="8" text-anchor="middle" xml:space="preserve">融合分组成可独立下发的单元</text><text x="800.0" y="358" fill="#94a3b8" font-size="8" text-anchor="middle" xml:space="preserve">33 次调用 · 23 个不同单元</text><text x="800.0" y="383" fill="#fbbf24" font-size="8" font-weight="600" text-anchor="middle" xml:space="preserve">产物 flow.mlir · 76 KB</text>
+<rect x="490" y="308" width="190" height="84" rx="6" fill="#0f172a"/><rect x="490" y="308" width="190" height="84" rx="6" fill="rgba(76,29,149,0.4)" stroke="#a78bfa" stroke-width="2"/><text x="585.0" y="329" fill="white" font-size="10.5" font-weight="600" text-anchor="middle" xml:space="preserve">7 · 设备分配与调度</text><text x="585.0" y="345" fill="#94a3b8" font-size="8" text-anchor="middle" xml:space="preserve">NPU 插件给每个单元选设备</text><text x="585.0" y="358" fill="#94a3b8" font-size="8" text-anchor="middle" xml:space="preserve">并插入两设备间的数据搬运</text><text x="585.0" y="383" fill="#fbbf24" font-size="8" font-weight="600" text-anchor="middle" xml:space="preserve">产物 stream.mlir · 100 KB</text>
+<rect x="275" y="308" width="190" height="84" rx="6" fill="#0f172a"/><rect x="275" y="308" width="190" height="84" rx="6" fill="rgba(6,78,59,0.4)" stroke="#34d399" stroke-width="1.5"/><text x="370.0" y="329" fill="white" font-size="10.5" font-weight="600" text-anchor="middle" xml:space="preserve">8 · 代码生成</text><text x="370.0" y="345" fill="#94a3b8" font-size="8" text-anchor="middle" xml:space="preserve">linalg→LLVM IR→汇编→ELF</text><text x="370.0" y="358" fill="#94a3b8" font-size="8" text-anchor="middle" xml:space="preserve">11 个 RV32 ELF + 1 个 x86 库</text><text x="370.0" y="383" fill="#fbbf24" font-size="8" font-weight="600" text-anchor="middle" xml:space="preserve">产物 109 KB + 13 KB</text>
+<rect x="60" y="308" width="190" height="84" rx="6" fill="#0f172a"/><rect x="60" y="308" width="190" height="84" rx="6" fill="rgba(120,53,15,0.4)" stroke="#fbbf24" stroke-width="1.5"/><text x="155.0" y="329" fill="white" font-size="10.5" font-weight="600" text-anchor="middle" xml:space="preserve">9 · 打包</text><text x="155.0" y="345" fill="#94a3b8" font-size="8" text-anchor="middle" xml:space="preserve">二进制+调度字节码+权重</text><text x="155.0" y="358" fill="#94a3b8" font-size="8" text-anchor="middle" xml:space="preserve">FlatBuffer 容器，不是 ELF</text><text x="155.0" y="383" fill="#fbbf24" font-size="8" font-weight="600" text-anchor="middle" xml:space="preserve">产物 vit.vmfb · 243 KB</text>
+<line x1="916" y1="350" x2="899" y2="350" stroke="#34d399" stroke-width="1.5" marker-end="url(#arrow-emerald)"/>
+<line x1="701" y1="350" x2="684" y2="350" stroke="#34d399" stroke-width="1.5" marker-end="url(#arrow-emerald)"/>
+<line x1="486" y1="350" x2="469" y2="350" stroke="#34d399" stroke-width="1.5" marker-end="url(#arrow-emerald)"/>
+<line x1="271" y1="350" x2="254" y2="350" stroke="#34d399" stroke-width="1.5" marker-end="url(#arrow-emerald)"/>
+<path d="M 985 166 C 985 235.0, 1015 235.0, 1015 304" fill="none" stroke="#fbbf24" stroke-width="1.5" marker-end="url(#arrow-amber)"/>
+<text x="1030" y="240" fill="#fbbf24" font-size="8" font-weight="600" xml:space="preserve">vit.mlir</text>
+<text x="290" y="416" fill="#64748b" font-size="8" xml:space="preserve">第 8 步每个单元各自走完 .codegen.ll → .optimized.ll → .s → .o → .so；NPU 侧 11 个 ELF 不合并，为了各自放得进很小的 ITCM</text>
+<text x="290" y="434" fill="#64748b" font-size="8" xml:space="preserve">NPU 目标三元组 riscv32-unknown-unknown-eabi-elf · 特性 +m,+f,+zvl128b,+zve32f（摘自 stream.mlir 的 #hal.device.target）</text>
+<rect x="40" y="490" width="1120" height="210" rx="12" fill="rgba(76,29,149,0.08)" stroke="#a78bfa" stroke-width="1" stroke-dasharray="8,4"/><text x="54" y="512" fill="#a78bfa" font-size="11" font-weight="600" xml:space="preserve">③ 运行：IREE 运行时 + MPACT 仿真器 —— run_vit.py 同时挂载两个设备，按调度字节码逐个执行 33 次 dispatch</text>
+<rect x="60" y="560" width="210" height="84" rx="6" fill="#0f172a"/><rect x="60" y="560" width="210" height="84" rx="6" fill="rgba(76,29,149,0.4)" stroke="#a78bfa" stroke-width="1.5"/><text x="165.0" y="581" fill="white" font-size="10.5" font-weight="600" text-anchor="middle" xml:space="preserve">IREE 虚拟机（主机）</text><text x="165.0" y="597" fill="#94a3b8" font-size="8" text-anchor="middle" xml:space="preserve">加载 vit.vmfb</text><text x="165.0" y="610" fill="#94a3b8" font-size="8" text-anchor="middle" xml:space="preserve">解释调度字节码，逐个下发</text><text x="165.0" y="635" fill="#fbbf24" font-size="8" font-weight="600" text-anchor="middle" xml:space="preserve">模块名 module · 入口 main</text>
+<rect x="370" y="530" width="300" height="60" rx="6" fill="#0f172a"/><rect x="370" y="530" width="300" height="60" rx="6" fill="rgba(30,41,59,0.5)" stroke="#94a3b8" stroke-width="1.5"/><text x="520.0" y="551" fill="white" font-size="10.5" font-weight="600" text-anchor="middle" xml:space="preserve">设备 local-sync —— 主机 x86</text><text x="520.0" y="567" fill="#94a3b8" font-size="8" text-anchor="middle" xml:space="preserve">直接调用 x86 库里的函数 · 15 次 dispatch</text>
+<rect x="370" y="610" width="300" height="60" rx="6" fill="#0f172a"/><rect x="370" y="610" width="300" height="60" rx="6" fill="rgba(6,78,59,0.4)" stroke="#34d399" stroke-width="2"/><text x="520.0" y="631" fill="white" font-size="10.5" font-weight="600" text-anchor="middle" xml:space="preserve">设备 coralnpu —— MPACT 指令级仿真</text><text x="520.0" y="647" fill="#94a3b8" font-size="8" text-anchor="middle" xml:space="preserve">HAL 驱动装载 RV32 ELF 与数据后执行 · 18 次</text>
+<path d="M 155 396 C 155 476.0, 155 476.0, 155 556" fill="none" stroke="#fbbf24" stroke-width="1.5" marker-end="url(#arrow-amber)"/>
+<text x="166" y="480" fill="#fbbf24" font-size="8" font-weight="600" xml:space="preserve">vit.vmfb</text>
+<path d="M 274 590 C 320.0 590, 320.0 560, 366 560" fill="none" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+<path d="M 274 614 C 320.0 614, 320.0 640, 366 640" fill="none" stroke="#34d399" stroke-width="1.5" marker-end="url(#arrow-emerald)"/>
+<rect x="770" y="560" width="170" height="84" rx="6" fill="#0f172a"/><rect x="770" y="560" width="170" height="84" rx="6" fill="rgba(8,51,68,0.45)" stroke="#22d3ee" stroke-width="1.5"/><text x="855.0" y="581" fill="white" font-size="10.5" font-weight="600" text-anchor="middle" xml:space="preserve">输出 logits</text><text x="855.0" y="597" fill="#94a3b8" font-size="8" text-anchor="middle" xml:space="preserve">tensor 1×10 f32</text><text x="855.0" y="610" fill="#94a3b8" font-size="8" text-anchor="middle" xml:space="preserve">top-1 = 类别 9</text>
+<path d="M 674 560 C 720.0 560, 720.0 592, 766 592" fill="none" stroke="#22d3ee" stroke-width="1.5" marker-end="url(#arrow-cyan)"/>
+<path d="M 674 640 C 720.0 640, 720.0 616, 766 616" fill="none" stroke="#22d3ee" stroke-width="1.5" marker-end="url(#arrow-cyan)"/>
+<rect x="980" y="560" width="160" height="84" rx="6" fill="#0f172a"/><rect x="980" y="560" width="160" height="84" rx="6" fill="rgba(251,146,60,0.12)" stroke="#fb923c" stroke-width="1.5"/><text x="1060.0" y="581" fill="white" font-size="10.5" font-weight="600" text-anchor="middle" xml:space="preserve">与参考答案比对</text><text x="1060.0" y="597" fill="#94a3b8" font-size="8" text-anchor="middle" xml:space="preserve">ref_out.npy（第 1 步产出）</text><text x="1060.0" y="610" fill="#94a3b8" font-size="8" text-anchor="middle" xml:space="preserve">最大绝对误差 8.4e-06</text><text x="1060.0" y="635" fill="#fbbf24" font-size="8" font-weight="600" text-anchor="middle" xml:space="preserve">SUCCESS</text>
+<line x1="944" y1="602" x2="976" y2="602" stroke="#fb923c" stroke-width="1.5" marker-end="url(#arrow-orange)"/>
+<text x="600" y="726" fill="#fb923c" font-size="10" font-weight="600" text-anchor="middle" xml:space="preserve">九步里真正换了工具的只有前四步：vit.mlir 之后，PyTorch 与 JAX 两条路线完全共用编译器与运行时</text>
+</svg>
+</div>
+<div class="cards"><div class="card"><div class="card-header"><div class="card-dot cyan"></div><h3>前端四步都在一个函数里</h3></div><ul><li>• fx.export_and_import(model, x, output_type="stablehlo") 内部依次做了捕获、导入、降级</li><li>• 把 output_type 换成 "torch" 就能停在第 3 步，图二的 Torch 方言原文就是这样导出的</li><li>• torch-mlir 只有 Linux x86 的 wheel，所以这四步在容器里跑；Rosetta 下实测正常</li></ul></div><div class="card"><div class="card-header"><div class="card-dot emerald"></div><h3>编译器四步也能逐段停</h3></div><ul><li>• --compile-to=input / flow / stream 分别停在第 5、6、7 步并写出 MLIR 文本</li><li>• --iree-hal-dump-executable-files-to=目录 会把第 8 步每个单元的 .ll / .s / .o / .so 全部留下</li><li>• 这些导出只为观察，正常使用时一条命令直接得到 vit.vmfb</li></ul></div><div class="card"><div class="card-header"><div class="card-dot violet"></div><h3>运行时是“主机调度 + 设备执行”</h3></div><ul><li>• vit.vmfb 由主机上的 IREE 虚拟机加载，NPU 只执行被分给它的内核</li><li>• 这与 TFLM 路线不同：那边整个解释器和模型都在 NPU 上，主机只负责写输入读输出</li><li>• stream.mlir 里两个设备互相声明为 unified_memory，编译器据此安排数据传递</li></ul></div></div>
+
+<h2 class="section-title"><span class="num amber">图二</span>一个算子的七次变身：qkv 投影从 Python 到 RISC-V 指令<span class="hint">同一运算 · 七层表示 · 产物原文</span></h2>
+<div class="diagram-container">
+<svg viewBox="0 0 1200 712">
+<defs>
+          <marker id="arrowhead" markerWidth="7" markerHeight="5" refX="6" refY="2.5" orient="auto">
+            <polygon points="0 0, 7 2.5, 0 5" fill="#94a3b8" />
+          </marker>
+          <marker id="arrow-cyan" markerWidth="7" markerHeight="5" refX="6" refY="2.5" orient="auto">
+            <polygon points="0 0, 7 2.5, 0 5" fill="#22d3ee" />
+          </marker>
+          <marker id="arrow-emerald" markerWidth="7" markerHeight="5" refX="6" refY="2.5" orient="auto">
+            <polygon points="0 0, 7 2.5, 0 5" fill="#34d399" />
+          </marker>
+          <marker id="arrow-amber" markerWidth="7" markerHeight="5" refX="6" refY="2.5" orient="auto">
+            <polygon points="0 0, 7 2.5, 0 5" fill="#fbbf24" />
+          </marker>
+          <marker id="arrow-violet" markerWidth="7" markerHeight="5" refX="6" refY="2.5" orient="auto">
+            <polygon points="0 0, 7 2.5, 0 5" fill="#a78bfa" />
+          </marker>
+          <marker id="arrow-rose" markerWidth="7" markerHeight="5" refX="6" refY="2.5" orient="auto">
+            <polygon points="0 0, 7 2.5, 0 5" fill="#fb7185" />
+          </marker>
+          <marker id="arrow-orange" markerWidth="7" markerHeight="5" refX="6" refY="2.5" orient="auto">
+            <polygon points="0 0, 7 2.5, 0 5" fill="#fb923c" />
+          </marker>
+          <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+            <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#1e293b" stroke-width="0.5"/>
+          </pattern>
+        </defs>
+<rect width="100%" height="100%" fill="url(#grid)" />
+<rect x="40" y="40" width="170" height="52" rx="6" fill="#0f172a"/><rect x="40" y="40" width="170" height="52" rx="6" fill="rgba(8,51,68,0.45)" stroke="#22d3ee" stroke-width="1.5"/><text x="125.0" y="61" fill="white" font-size="10.5" font-weight="600" text-anchor="middle" xml:space="preserve">PyTorch 源码</text>
+<text x="125" y="78" fill="#94a3b8" font-size="7.5" text-anchor="middle" xml:space="preserve">vit_torch.py</text>
+<rect x="222" y="40" width="938" height="52" rx="6" fill="#0b1220" stroke="#1e293b" stroke-width="1"/>
+<text x="234" y="59" fill="#cbd5e1" font-size="8.5" font-family="'JetBrains Mono','Menlo','SF Mono','Consolas','DejaVu Sans Mono',monospace" xml:space="preserve">self.qkv = <tspan fill="#fbbf24" font-weight="600">nn.Linear</tspan>(DIM, 3 * DIM, bias=False)</text><text x="534" y="59" fill="#64748b" font-size="8" xml:space="preserve"># DIM = 32，输出 96 = Q、K、V 各 32</text>
+<text x="234" y="74" fill="#cbd5e1" font-size="8.5" font-family="'JetBrains Mono','Menlo','SF Mono','Consolas','DejaVu Sans Mono',monospace" xml:space="preserve">qkv = self.qkv(self.ln1(x)).reshape(b, n, 3, HEADS, HDIM).permute(2, 0, 3, 1, 4)</text>
+<rect x="40" y="116" width="170" height="67" rx="6" fill="#0f172a"/><rect x="40" y="116" width="170" height="67" rx="6" fill="rgba(8,51,68,0.45)" stroke="#22d3ee" stroke-width="1.5"/><text x="125.0" y="137" fill="white" font-size="10.5" font-weight="600" text-anchor="middle" xml:space="preserve">FX 图节点</text>
+<text x="125" y="154" fill="#94a3b8" font-size="7.5" text-anchor="middle" xml:space="preserve">torch.export</text>
+<rect x="222" y="116" width="938" height="67" rx="6" fill="#0b1220" stroke="#1e293b" stroke-width="1"/>
+<text x="234" y="135" fill="#cbd5e1" font-size="8.5" font-family="'JetBrains Mono','Menlo','SF Mono','Consolas','DejaVu Sans Mono',monospace" xml:space="preserve">add_2 = torch.ops.aten.add.Tensor(mul, p_blocks_0_ln1_b);  mul = p_blocks_0_ln1_b = None</text>
+<text x="234" y="150" fill="#cbd5e1" font-size="8.5" font-family="'JetBrains Mono','Menlo','SF Mono','Consolas','DejaVu Sans Mono',monospace" xml:space="preserve">linear_1 = torch.ops.<tspan fill="#fbbf24" font-weight="600">aten.linear.default</tspan>(add_2, p_blocks_0_qkv_weight);  add_2 = p_blocks_0_qkv_weight = None</text>
+<text x="234" y="165" fill="#cbd5e1" font-size="8.5" font-family="'JetBrains Mono','Menlo','SF Mono','Consolas','DejaVu Sans Mono',monospace" xml:space="preserve">reshape_2 = torch.ops.aten.reshape.default(linear_1, [1, 17, 3, 2, 16]);  linear_1 = None</text>
+<rect x="40" y="207" width="170" height="67" rx="6" fill="#0f172a"/><rect x="40" y="207" width="170" height="67" rx="6" fill="rgba(8,51,68,0.45)" stroke="#22d3ee" stroke-width="1.5"/><text x="125.0" y="228" fill="white" font-size="10.5" font-weight="600" text-anchor="middle" xml:space="preserve">Torch 方言</text>
+<text x="125" y="245" fill="#94a3b8" font-size="7.5" text-anchor="middle" xml:space="preserve">vit.torch_dialect.mlir:86–89</text>
+<rect x="222" y="207" width="938" height="67" rx="6" fill="#0b1220" stroke="#1e293b" stroke-width="1"/>
+<text x="234" y="226" fill="#cbd5e1" font-size="8.5" font-family="'JetBrains Mono','Menlo','SF Mono','Consolas','DejaVu Sans Mono',monospace" xml:space="preserve">%61 = torch.aten.permute %20, %60 : !torch.vtensor&lt;[96,32],f32&gt;, !torch.list&lt;int&gt; -&gt; !torch.vtensor&lt;[32,96],f32&gt;</text>
+<text x="234" y="241" fill="#cbd5e1" font-size="8.5" font-family="'JetBrains Mono','Menlo','SF Mono','Consolas','DejaVu Sans Mono',monospace" xml:space="preserve">%63 = torch.aten.view %59, %62 : !torch.vtensor&lt;[1,17,32],f32&gt;, !torch.list&lt;int&gt; -&gt; !torch.vtensor&lt;[17,32],f32&gt;</text>
+<text x="234" y="256" fill="#cbd5e1" font-size="8.5" font-family="'JetBrains Mono','Menlo','SF Mono','Consolas','DejaVu Sans Mono',monospace" xml:space="preserve">%64 = <tspan fill="#fbbf24" font-weight="600">torch.aten.mm</tspan> %63, %61 : !torch.vtensor&lt;[17,32],f32&gt;, !torch.vtensor&lt;[32,96],f32&gt; -&gt; !torch.vtensor&lt;[17,96],f32&gt;</text>
+<rect x="40" y="298" width="170" height="52" rx="6" fill="#0f172a"/><rect x="40" y="298" width="170" height="52" rx="6" fill="rgba(120,53,15,0.4)" stroke="#fbbf24" stroke-width="1.5"/><text x="125.0" y="319" fill="white" font-size="10.5" font-weight="600" text-anchor="middle" xml:space="preserve">StableHLO</text>
+<text x="125" y="336" fill="#94a3b8" font-size="7.5" text-anchor="middle" xml:space="preserve">vit.mlir:86–87</text>
+<rect x="222" y="298" width="938" height="52" rx="6" fill="#0b1220" stroke="#1e293b" stroke-width="1"/>
+<text x="234" y="317" fill="#cbd5e1" font-size="8.5" font-family="'JetBrains Mono','Menlo','SF Mono','Consolas','DejaVu Sans Mono',monospace" xml:space="preserve">%44 = stablehlo.reshape %42 : (tensor&lt;1x17x32xf32&gt;) -&gt; tensor&lt;17x32xf32&gt;</text>
+<text x="234" y="332" fill="#cbd5e1" font-size="8.5" font-family="'JetBrains Mono','Menlo','SF Mono','Consolas','DejaVu Sans Mono',monospace" xml:space="preserve">%45 = <tspan fill="#fbbf24" font-weight="600">stablehlo.dot_general</tspan> %44, %43, contracting_dims = [1] x [0] : (tensor&lt;17x32xf32&gt;, tensor&lt;32x96xf32&gt;) -&gt; tensor&lt;17x96xf32&gt;</text>
+<rect x="40" y="374" width="170" height="67" rx="6" fill="#0f172a"/><rect x="40" y="374" width="170" height="67" rx="6" fill="rgba(6,78,59,0.4)" stroke="#34d399" stroke-width="1.5"/><text x="125.0" y="395" fill="white" font-size="10.5" font-weight="600" text-anchor="middle" xml:space="preserve">linalg</text>
+<text x="125" y="412" fill="#94a3b8" font-size="7.5" text-anchor="middle" xml:space="preserve">input.mlir:234–236</text>
+<rect x="222" y="374" width="938" height="67" rx="6" fill="#0b1220" stroke="#1e293b" stroke-width="1"/>
+<text x="234" y="393" fill="#cbd5e1" font-size="8.5" font-family="'JetBrains Mono','Menlo','SF Mono','Consolas','DejaVu Sans Mono',monospace" xml:space="preserve">%70 = tensor.empty() : tensor&lt;17x96xf32&gt;</text>
+<text x="234" y="408" fill="#cbd5e1" font-size="8.5" font-family="'JetBrains Mono','Menlo','SF Mono','Consolas','DejaVu Sans Mono',monospace" xml:space="preserve">%71 = linalg.fill ins(%cst_9 : f32) outs(%70 : tensor&lt;17x96xf32&gt;) -&gt; tensor&lt;17x96xf32&gt;</text>
+<text x="234" y="423" fill="#cbd5e1" font-size="8.5" font-family="'JetBrains Mono','Menlo','SF Mono','Consolas','DejaVu Sans Mono',monospace" xml:space="preserve">%72 = <tspan fill="#fbbf24" font-weight="600">linalg.matmul</tspan> ins(%collapsed_45, %69 : tensor&lt;17x32xf32&gt;, tensor&lt;32x96xf32&gt;) outs(%71 : tensor&lt;17x96xf32&gt;) -&gt; tensor&lt;17x96xf32&gt;</text>
+<rect x="40" y="465" width="170" height="52" rx="6" fill="#0f172a"/><rect x="40" y="465" width="170" height="52" rx="6" fill="rgba(76,29,149,0.4)" stroke="#a78bfa" stroke-width="1.5"/><text x="125.0" y="486" fill="white" font-size="10.5" font-weight="600" text-anchor="middle" xml:space="preserve">flow dispatch</text>
+<text x="125" y="503" fill="#94a3b8" font-size="7.5" text-anchor="middle" xml:space="preserve">flow.mlir:635</text>
+<rect x="222" y="465" width="938" height="52" rx="6" fill="#0b1220" stroke="#1e293b" stroke-width="1"/>
+<text x="234" y="484" fill="#cbd5e1" font-size="8.5" font-family="'JetBrains Mono','Menlo','SF Mono','Consolas','DejaVu Sans Mono',monospace" xml:space="preserve">%13 = <tspan fill="#fbbf24" font-weight="600">flow.dispatch</tspan> @main_dispatch_5::@main_dispatch_5_matmul_17x96x32_f32(%12, %__constant_tensor_96x32xf32_3)</text>
+<text x="234" y="499" fill="#cbd5e1" font-size="8.5" font-family="'JetBrains Mono','Menlo','SF Mono','Consolas','DejaVu Sans Mono',monospace" xml:space="preserve">        {stream.affinity = #hal.device.affinity&lt;@__device_1&gt;} : (tensor&lt;17x32xf32&gt;, tensor&lt;96x32xf32&gt;) -&gt; tensor&lt;17x96xf32&gt;</text>
+<rect x="40" y="541" width="170" height="97" rx="6" fill="#0f172a"/><rect x="40" y="541" width="170" height="97" rx="6" fill="rgba(6,78,59,0.4)" stroke="#34d399" stroke-width="1.5"/><text x="125.0" y="562" fill="white" font-size="10.5" font-weight="600" text-anchor="middle" xml:space="preserve">RISC-V 汇编</text>
+<text x="125" y="579" fill="#94a3b8" font-size="7.5" text-anchor="middle" xml:space="preserve">main_dispatch_5_…riscv_32.s</text>
+<rect x="222" y="541" width="938" height="97" rx="6" fill="#0b1220" stroke="#1e293b" stroke-width="1"/>
+<text x="234" y="560" fill="#cbd5e1" font-size="8.5" font-family="'JetBrains Mono','Menlo','SF Mono','Consolas','DejaVu Sans Mono',monospace" xml:space="preserve">vsetivli  zero, 8, e32, m2, ta, ma</text><text x="534" y="560" fill="#64748b" font-size="8" xml:space="preserve"># 向量长度 8，元素 32 位</text>
+<text x="234" y="575" fill="#cbd5e1" font-size="8.5" font-family="'JetBrains Mono','Menlo','SF Mono','Consolas','DejaVu Sans Mono',monospace" xml:space="preserve">vlse32.v  v18, (t0), a5</text><text x="534" y="575" fill="#64748b" font-size="8" xml:space="preserve"># 按步长从内存取 8 个 f32</text>
+<text x="234" y="590" fill="#cbd5e1" font-size="8.5" font-family="'JetBrains Mono','Menlo','SF Mono','Consolas','DejaVu Sans Mono',monospace" xml:space="preserve">vrgather.vi v16, v2, 0</text>
+<text x="234" y="605" fill="#cbd5e1" font-size="8.5" font-family="'JetBrains Mono','Menlo','SF Mono','Consolas','DejaVu Sans Mono',monospace" xml:space="preserve"><tspan fill="#fbbf24" font-weight="600">vfmadd.vv</tspan> v16, v18, v4</text><text x="534" y="605" fill="#64748b" font-size="8" xml:space="preserve"># 8 路浮点乘加：v16 = v16*v18 + v4</text>
+<text x="234" y="620" fill="#cbd5e1" font-size="8.5" font-family="'JetBrains Mono','Menlo','SF Mono','Consolas','DejaVu Sans Mono',monospace" xml:space="preserve">vmerge.vvm v4, v4, v16, v0</text><text x="534" y="620" fill="#64748b" font-size="8" xml:space="preserve"># 按掩码写回累加器</text>
+<line x1="125" y1="95" x2="125" y2="112" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+<line x1="125" y1="186" x2="125" y2="203" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+<line x1="125" y1="277" x2="125" y2="294" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+<line x1="125" y1="353" x2="125" y2="370" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+<line x1="125" y1="444" x2="125" y2="461" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+<line x1="125" y1="520" x2="125" y2="537" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+<text x="140" y="108" fill="#64748b" font-size="8" xml:space="preserve">追踪：Python 调用变成图节点</text>
+<text x="140" y="199" fill="#64748b" font-size="8" xml:space="preserve">翻译：Linear 被拆成 permute + view + mm</text>
+<text x="140" y="290" fill="#64748b" font-size="8" xml:space="preserve">改写：aten.mm → dot_general，类型从 vtensor 变 tensor</text>
+<text x="140" y="366" fill="#64748b" font-size="8" xml:space="preserve">改写：补上输出缓冲与清零，矩阵乘成为可分析的循环</text>
+<text x="140" y="457" fill="#64748b" font-size="8" xml:space="preserve">切分：这个矩阵乘独占一个 dispatch，并被标上 NPU 设备</text>
+<text x="140" y="533" fill="#64748b" font-size="8" xml:space="preserve">代码生成：循环被向量化成 8 路浮点乘加</text>
+<text x="40" y="668" fill="#64748b" font-size="8" xml:space="preserve">口径：七段文字描述的是同一个运算 —— 第一个 Transformer block 的 qkv 投影，17 个 token × 32 维 → 96 维。除注释外均为产物文件原文，超长处以 … 截断</text>
+<text x="600" y="692" fill="#fb923c" font-size="10" font-weight="600" text-anchor="middle" xml:space="preserve">抽象层级一路下降，但形状 17×32 · 32×96 → 17×96 从头到尾没变 —— 顺着形状就能在任意一层找到同一个算子</text>
+</svg>
+</div>
+<div class="cards"><div class="card"><div class="card-header"><div class="card-dot cyan"></div><h3>PyTorch 特有的痕迹</h3></div><ul><li>• nn.Linear 的权重按 [out, in] = [96, 32] 存，用之前要先 permute 成 [32, 96]</li><li>• 所以 Torch 方言里一个 Linear 变成 permute + view + mm 三条</li><li>• 这也是 PyTorch 版 reshape / transpose 数量远多于 JAX 版的原因，但后面会被编译器融合掉</li></ul></div><div class="card"><div class="card-header"><div class="card-dot amber"></div><h3>StableHLO 是交接面</h3></div><ul><li>• 到这一层已经看不出模型来自 PyTorch 还是 JAX</li><li>• 类型从 !torch.vtensor&lt;[17,32],f32&gt; 变成标准的 tensor&lt;17x32xf32&gt;</li><li>• 编译器只加载了 input_stablehlo 和 input_tosa 两个输入插件，所以必须降到这一层</li></ul></div><div class="card"><div class="card-header"><div class="card-dot emerald"></div><h3>linalg 之后才谈得上优化</h3></div><ul><li>• linalg.matmul 把输出缓冲、清零、乘加循环都显式化，编译器能看见循环结构</li><li>• flow.dispatch 上的 stream.affinity 属性就是设备分配的结果，@__device_1 = coralnpu</li><li>• 最终汇编里能直接看到向量长度 8、元素宽 32 位的浮点乘加</li></ul></div></div>
+
+<h2 class="section-title"><span class="num violet">图三</span>规模漏斗：每个阶段有多少个“东西”<span class="hint">先拆细 · 再融合</span></h2>
+<div class="diagram-container">
+<svg viewBox="0 0 1200 440">
+<defs>
+          <marker id="arrowhead" markerWidth="7" markerHeight="5" refX="6" refY="2.5" orient="auto">
+            <polygon points="0 0, 7 2.5, 0 5" fill="#94a3b8" />
+          </marker>
+          <marker id="arrow-cyan" markerWidth="7" markerHeight="5" refX="6" refY="2.5" orient="auto">
+            <polygon points="0 0, 7 2.5, 0 5" fill="#22d3ee" />
+          </marker>
+          <marker id="arrow-emerald" markerWidth="7" markerHeight="5" refX="6" refY="2.5" orient="auto">
+            <polygon points="0 0, 7 2.5, 0 5" fill="#34d399" />
+          </marker>
+          <marker id="arrow-amber" markerWidth="7" markerHeight="5" refX="6" refY="2.5" orient="auto">
+            <polygon points="0 0, 7 2.5, 0 5" fill="#fbbf24" />
+          </marker>
+          <marker id="arrow-violet" markerWidth="7" markerHeight="5" refX="6" refY="2.5" orient="auto">
+            <polygon points="0 0, 7 2.5, 0 5" fill="#a78bfa" />
+          </marker>
+          <marker id="arrow-rose" markerWidth="7" markerHeight="5" refX="6" refY="2.5" orient="auto">
+            <polygon points="0 0, 7 2.5, 0 5" fill="#fb7185" />
+          </marker>
+          <marker id="arrow-orange" markerWidth="7" markerHeight="5" refX="6" refY="2.5" orient="auto">
+            <polygon points="0 0, 7 2.5, 0 5" fill="#fb923c" />
+          </marker>
+          <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+            <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#1e293b" stroke-width="0.5"/>
+          </pattern>
+        </defs>
+<rect width="100%" height="100%" fill="url(#grid)" />
+<rect x="40" y="30" width="1120" height="360" rx="12" fill="rgba(30,41,59,0.25)" stroke="#94a3b8" stroke-width="1" stroke-dasharray="8,4"/><text x="54" y="52" fill="#94a3b8" font-size="11" font-weight="600" xml:space="preserve">① 每个阶段“有多少个东西” —— 先越拆越细，再融合收拢</text>
+<text x="330" y="94" fill="white" font-size="9.5" font-weight="600" text-anchor="end" xml:space="preserve">FX 图节点（ATen 算子）</text>
+<rect x="350" y="78" width="125.9" height="24" rx="3" fill="rgba(8,51,68,0.45)" stroke="#22d3ee" stroke-width="1.2"/>
+<text x="485.9319286871961" y="94" fill="#22d3ee" font-size="10" font-weight="700" xml:space="preserve">111</text>
+<text x="515.9319286871961" y="94" fill="#94a3b8" font-size="8" xml:space="preserve">torch.export 之后</text>
+<text x="330" y="134" fill="white" font-size="9.5" font-weight="600" text-anchor="end" xml:space="preserve">Torch 方言 aten 算子</text>
+<rect x="350" y="118" width="215.6" height="24" rx="3" fill="rgba(8,51,68,0.45)" stroke="#22d3ee" stroke-width="1.2"/>
+<text x="575.5591572123177" y="134" fill="#22d3ee" font-size="10" font-weight="700" xml:space="preserve">190</text>
+<text x="605.5591572123177" y="134" fill="#94a3b8" font-size="8" xml:space="preserve">Linear 等复合算子被拆开，所以变多</text>
+<text x="330" y="174" fill="white" font-size="9.5" font-weight="600" text-anchor="end" xml:space="preserve">StableHLO 算子</text>
+<rect x="350" y="158" width="337.0" height="24" rx="3" fill="rgba(120,53,15,0.4)" stroke="#fbbf24" stroke-width="1.2"/>
+<text x="696.9529983792545" y="174" fill="#fbbf24" font-size="10" font-weight="700" xml:space="preserve">297</text>
+<text x="726.9529983792545" y="174" fill="#94a3b8" font-size="8" xml:space="preserve">softmax / layernorm 继续拆成基础运算</text>
+<text x="330" y="214" fill="white" font-size="9.5" font-weight="600" text-anchor="end" xml:space="preserve">linalg 层全部操作</text>
+<rect x="350" y="198" width="700.0" height="24" rx="3" fill="rgba(6,78,59,0.4)" stroke="#34d399" stroke-width="1.2"/>
+<text x="1060.0" y="214" fill="#34d399" font-size="10" font-weight="700" xml:space="preserve">617</text>
+<text x="362" y="214" fill="#cbd5e1" font-size="8" xml:space="preserve">最细的一层：每个循环、每个缓冲、每次 reshape 都显式写出</text>
+<text x="330" y="254" fill="white" font-size="9.5" font-weight="600" text-anchor="end" xml:space="preserve">dispatch 调用次数</text>
+<rect x="350" y="238" width="37.4" height="24" rx="3" fill="rgba(76,29,149,0.4)" stroke="#a78bfa" stroke-width="1.2"/>
+<text x="397.43922204213936" y="254" fill="#a78bfa" font-size="10" font-weight="700" xml:space="preserve">33</text>
+<text x="419.43922204213936" y="254" fill="#94a3b8" font-size="8" xml:space="preserve">融合之后：617 个操作收拢成 33 次下发</text>
+<text x="330" y="294" fill="white" font-size="9.5" font-weight="600" text-anchor="end" xml:space="preserve">不同的 dispatch 单元</text>
+<rect x="350" y="278" width="26.1" height="24" rx="3" fill="rgba(76,29,149,0.4)" stroke="#a78bfa" stroke-width="1.2"/>
+<text x="386.09400324149107" y="294" fill="#a78bfa" font-size="10" font-weight="700" xml:space="preserve">23</text>
+<text x="408.09400324149107" y="294" fill="#94a3b8" font-size="8" xml:space="preserve">两个 block 形状相同，单元可复用</text>
+<text x="330" y="334" fill="white" font-size="9.5" font-weight="600" text-anchor="end" xml:space="preserve">最终二进制个数</text>
+<rect x="350" y="318" width="13.6" height="24" rx="3" fill="rgba(6,78,59,0.4)" stroke="#34d399" stroke-width="1.2"/>
+<text x="373.61426256077795" y="334" fill="#34d399" font-size="10" font-weight="700" xml:space="preserve">12</text>
+<text x="395.61426256077795" y="334" fill="#94a3b8" font-size="8" xml:space="preserve">11 个 RV32 ELF（NPU）+ 1 个 x86 库（主机）</text>
+<text x="60" y="372" fill="#64748b" font-size="8" xml:space="preserve">口径：条形等比（700 px = 617）。各行数的是该层级自己的“操作”，层级不同不可直接相加，只看趋势</text>
+<text x="600" y="416" fill="#fb923c" font-size="10" font-weight="600" text-anchor="middle" xml:space="preserve">前四层是“翻译”，数量越翻越多；编译器真正的工作发生在 617 → 33 这一步：决定哪些循环合并成一个可下发的内核</text>
+</svg>
+</div>
+<div class="cards"><div class="card"><div class="card-header"><div class="card-dot cyan"></div><h3>为什么越翻越多</h3></div><ul><li>• 高层算子是复合的：一个 softmax 到 StableHLO 变成 exp + reduce + divide + broadcast</li><li>• 到 linalg 层，连每个输出缓冲的分配（tensor.empty）都是一条独立操作</li><li>• 变多不是变慢，只是表示更细，方便后面重新组合</li></ul></div><div class="card"><div class="card-header"><div class="card-dot violet"></div><h3>617 → 33 是关键一步</h3></div><ul><li>• 编译器把能在一个循环里算完的相邻操作融合成一个 dispatch</li><li>• 例如 dispatch_13：fc1 矩阵乘与紧跟的 gelu（tanh、powf）在同一个内核里</li><li>• 融合得越好，设备间来回搬数据的次数越少</li></ul></div><div class="card"><div class="card-header"><div class="card-dot emerald"></div><h3>33 → 23 → 12</h3></div><ul><li>• 两个 Transformer block 形状相同，8 个单元直接复用，所以 33 次调用只需 23 个单元</li><li>• 主机侧 12 个单元链接成 1 个 x86 库；NPU 侧 11 个各自独立成 ELF</li><li>• NPU 侧不合并是硬件约束：每个 ELF 要能单独放进 ITCM</li></ul></div></div>
+
+<h2 class="section-title"><span class="num emerald">图四</span>33 次 dispatch 的执行序列与设备分配<span class="hint">执行顺序 · NPU / 主机 · 工作量占比</span></h2>
+<div class="diagram-container">
+<svg viewBox="0 0 1200 512">
+<defs>
+          <marker id="arrowhead" markerWidth="7" markerHeight="5" refX="6" refY="2.5" orient="auto">
+            <polygon points="0 0, 7 2.5, 0 5" fill="#94a3b8" />
+          </marker>
+          <marker id="arrow-cyan" markerWidth="7" markerHeight="5" refX="6" refY="2.5" orient="auto">
+            <polygon points="0 0, 7 2.5, 0 5" fill="#22d3ee" />
+          </marker>
+          <marker id="arrow-emerald" markerWidth="7" markerHeight="5" refX="6" refY="2.5" orient="auto">
+            <polygon points="0 0, 7 2.5, 0 5" fill="#34d399" />
+          </marker>
+          <marker id="arrow-amber" markerWidth="7" markerHeight="5" refX="6" refY="2.5" orient="auto">
+            <polygon points="0 0, 7 2.5, 0 5" fill="#fbbf24" />
+          </marker>
+          <marker id="arrow-violet" markerWidth="7" markerHeight="5" refX="6" refY="2.5" orient="auto">
+            <polygon points="0 0, 7 2.5, 0 5" fill="#a78bfa" />
+          </marker>
+          <marker id="arrow-rose" markerWidth="7" markerHeight="5" refX="6" refY="2.5" orient="auto">
+            <polygon points="0 0, 7 2.5, 0 5" fill="#fb7185" />
+          </marker>
+          <marker id="arrow-orange" markerWidth="7" markerHeight="5" refX="6" refY="2.5" orient="auto">
+            <polygon points="0 0, 7 2.5, 0 5" fill="#fb923c" />
+          </marker>
+          <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+            <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#1e293b" stroke-width="0.5"/>
+          </pattern>
+        </defs>
+<rect width="100%" height="100%" fill="url(#grid)" />
+<rect x="40" y="30" width="1120" height="215" rx="12" fill="rgba(6,78,59,0.08)" stroke="#34d399" stroke-width="1" stroke-dasharray="8,4"/><text x="54" y="52" fill="#34d399" font-size="11" font-weight="600" xml:space="preserve">① 一次推理的 33 次 dispatch，按执行顺序自左向右 —— 格内数字 = dispatch 编号（flow.mlir 中的调用顺序）</text>
+<path d="M 58 92 L 58 86 L 153 86 L 153 92" fill="none" stroke="#64748b" stroke-width="1"/>
+<text x="105.5" y="80" fill="#94a3b8" font-size="8.5" font-weight="600" text-anchor="middle" xml:space="preserve">Patch 嵌入</text>
+<path d="M 157 92 L 157 86 L 549 86 L 549 92" fill="none" stroke="#64748b" stroke-width="1"/>
+<text x="353.0" y="80" fill="#94a3b8" font-size="8.5" font-weight="600" text-anchor="middle" xml:space="preserve">Transformer block 1</text>
+<path d="M 553 92 L 553 86 L 945 86 L 945 92" fill="none" stroke="#64748b" stroke-width="1"/>
+<text x="749.0" y="80" fill="#94a3b8" font-size="8.5" font-weight="600" text-anchor="middle" xml:space="preserve">Transformer block 2</text>
+<path d="M 949 92 L 949 86 L 1143 86 L 1143 92" fill="none" stroke="#64748b" stroke-width="1"/>
+<text x="1046.0" y="80" fill="#94a3b8" font-size="8.5" font-weight="600" text-anchor="middle" xml:space="preserve">末层 LN + 分类头</text>
+<rect x="58" y="100" width="29" height="44" rx="4" fill="#0f172a"/>
+<rect x="58" y="100" width="29" height="44" rx="4" fill="rgba(30,41,59,0.5)" stroke="#94a3b8" stroke-width="1"/>
+<text x="72.5" y="119" fill="white" font-size="10" font-weight="700" text-anchor="middle" xml:space="preserve">0</text>
+<text x="72.5" y="135" fill="#94a3b8" font-size="7.5" font-weight="600" text-anchor="middle" xml:space="preserve">T</text>
+<text x="72.5" y="160" fill="#94a3b8" font-size="7.5" text-anchor="middle" xml:space="preserve">重排</text>
+<rect x="91" y="100" width="29" height="44" rx="4" fill="#0f172a"/>
+<rect x="91" y="100" width="29" height="44" rx="4" fill="rgba(6,78,59,0.4)" stroke="#34d399" stroke-width="1.8"/>
+<text x="105.5" y="119" fill="white" font-size="10" font-weight="700" text-anchor="middle" xml:space="preserve">1</text>
+<text x="105.5" y="135" fill="#34d399" font-size="7.5" font-weight="600" text-anchor="middle" xml:space="preserve">mm</text>
+<text x="105.5" y="160" fill="#94a3b8" font-size="7.5" text-anchor="middle" xml:space="preserve">投影</text>
+<rect x="124" y="100" width="29" height="44" rx="4" fill="#0f172a"/>
+<rect x="124" y="100" width="29" height="44" rx="4" fill="rgba(30,41,59,0.5)" stroke="#94a3b8" stroke-width="1"/>
+<text x="138.5" y="119" fill="white" font-size="10" font-weight="700" text-anchor="middle" xml:space="preserve">2</text>
+<text x="138.5" y="135" fill="#94a3b8" font-size="7.5" font-weight="600" text-anchor="middle" xml:space="preserve">elt</text>
+<text x="138.5" y="160" fill="#94a3b8" font-size="7.5" text-anchor="middle" xml:space="preserve">+pos</text>
+<rect x="157" y="100" width="29" height="44" rx="4" fill="#0f172a"/>
+<rect x="157" y="100" width="29" height="44" rx="4" fill="rgba(30,41,59,0.5)" stroke="#94a3b8" stroke-width="1"/>
+<text x="171.5" y="119" fill="white" font-size="10" font-weight="700" text-anchor="middle" xml:space="preserve">3</text>
+<text x="171.5" y="135" fill="#94a3b8" font-size="7.5" font-weight="600" text-anchor="middle" xml:space="preserve">red</text>
+<text x="171.5" y="160" fill="#94a3b8" font-size="7.5" text-anchor="middle" xml:space="preserve">LN1</text>
+<rect x="190" y="100" width="29" height="44" rx="4" fill="#0f172a"/>
+<rect x="190" y="100" width="29" height="44" rx="4" fill="rgba(30,41,59,0.5)" stroke="#94a3b8" stroke-width="1"/>
+<text x="204.5" y="119" fill="white" font-size="10" font-weight="700" text-anchor="middle" xml:space="preserve">4</text>
+<text x="204.5" y="135" fill="#94a3b8" font-size="7.5" font-weight="600" text-anchor="middle" xml:space="preserve">red</text>
+<text x="204.5" y="160" fill="#94a3b8" font-size="7.5" text-anchor="middle" xml:space="preserve">LN1</text>
+<rect x="223" y="100" width="29" height="44" rx="4" fill="#0f172a"/>
+<rect x="223" y="100" width="29" height="44" rx="4" fill="rgba(6,78,59,0.4)" stroke="#34d399" stroke-width="1.8"/>
+<text x="237.5" y="119" fill="white" font-size="10" font-weight="700" text-anchor="middle" xml:space="preserve">5</text>
+<text x="237.5" y="135" fill="#34d399" font-size="7.5" font-weight="600" text-anchor="middle" xml:space="preserve">mm</text>
+<text x="237.5" y="160" fill="#94a3b8" font-size="7.5" text-anchor="middle" xml:space="preserve">qkv</text>
+<rect x="256" y="100" width="29" height="44" rx="4" fill="#0f172a"/>
+<rect x="256" y="100" width="29" height="44" rx="4" fill="rgba(6,78,59,0.4)" stroke="#34d399" stroke-width="1.8"/>
+<text x="270.5" y="119" fill="white" font-size="10" font-weight="700" text-anchor="middle" xml:space="preserve">6</text>
+<text x="270.5" y="135" fill="#34d399" font-size="7.5" font-weight="600" text-anchor="middle" xml:space="preserve">T</text>
+<text x="270.5" y="160" fill="#94a3b8" font-size="7.5" text-anchor="middle" xml:space="preserve">分头</text>
+<rect x="289" y="100" width="29" height="44" rx="4" fill="#0f172a"/>
+<rect x="289" y="100" width="29" height="44" rx="4" fill="rgba(6,78,59,0.4)" stroke="#34d399" stroke-width="1.8"/>
+<text x="303.5" y="119" fill="white" font-size="10" font-weight="700" text-anchor="middle" xml:space="preserve">7</text>
+<text x="303.5" y="135" fill="#34d399" font-size="7.5" font-weight="600" text-anchor="middle" xml:space="preserve">bmm</text>
+<text x="303.5" y="160" fill="#94a3b8" font-size="7.5" text-anchor="middle" xml:space="preserve">QKᵀ</text>
+<rect x="322" y="100" width="29" height="44" rx="4" fill="#0f172a"/>
+<rect x="322" y="100" width="29" height="44" rx="4" fill="rgba(6,78,59,0.4)" stroke="#34d399" stroke-width="1.8"/>
+<text x="336.5" y="119" fill="white" font-size="10" font-weight="700" text-anchor="middle" xml:space="preserve">8</text>
+<text x="336.5" y="135" fill="#34d399" font-size="7.5" font-weight="600" text-anchor="middle" xml:space="preserve">smax</text>
+<text x="336.5" y="160" fill="#94a3b8" font-size="7.5" text-anchor="middle" xml:space="preserve">smax</text>
+<rect x="355" y="100" width="29" height="44" rx="4" fill="#0f172a"/>
+<rect x="355" y="100" width="29" height="44" rx="4" fill="rgba(6,78,59,0.4)" stroke="#34d399" stroke-width="1.8"/>
+<text x="369.5" y="119" fill="white" font-size="10" font-weight="700" text-anchor="middle" xml:space="preserve">9</text>
+<text x="369.5" y="135" fill="#34d399" font-size="7.5" font-weight="600" text-anchor="middle" xml:space="preserve">bmm</text>
+<text x="369.5" y="160" fill="#94a3b8" font-size="7.5" text-anchor="middle" xml:space="preserve">AV</text>
+<rect x="388" y="100" width="29" height="44" rx="4" fill="#0f172a"/>
+<rect x="388" y="100" width="29" height="44" rx="4" fill="rgba(6,78,59,0.4)" stroke="#34d399" stroke-width="1.8"/>
+<text x="402.5" y="119" fill="white" font-size="10" font-weight="700" text-anchor="middle" xml:space="preserve">10</text>
+<text x="402.5" y="135" fill="#34d399" font-size="7.5" font-weight="600" text-anchor="middle" xml:space="preserve">mm</text>
+<text x="402.5" y="160" fill="#94a3b8" font-size="7.5" text-anchor="middle" xml:space="preserve">proj</text>
+<rect x="421" y="100" width="29" height="44" rx="4" fill="#0f172a"/>
+<rect x="421" y="100" width="29" height="44" rx="4" fill="rgba(30,41,59,0.5)" stroke="#94a3b8" stroke-width="1"/>
+<text x="435.5" y="119" fill="white" font-size="10" font-weight="700" text-anchor="middle" xml:space="preserve">3</text>
+<text x="435.5" y="135" fill="#94a3b8" font-size="7.5" font-weight="600" text-anchor="middle" xml:space="preserve">red</text>
+<text x="435.5" y="160" fill="#94a3b8" font-size="7.5" text-anchor="middle" xml:space="preserve">LN2</text>
+<rect x="454" y="100" width="29" height="44" rx="4" fill="#0f172a"/>
+<rect x="454" y="100" width="29" height="44" rx="4" fill="rgba(30,41,59,0.5)" stroke="#94a3b8" stroke-width="1"/>
+<text x="468.5" y="119" fill="white" font-size="10" font-weight="700" text-anchor="middle" xml:space="preserve">12</text>
+<text x="468.5" y="135" fill="#94a3b8" font-size="7.5" font-weight="600" text-anchor="middle" xml:space="preserve">red</text>
+<text x="468.5" y="160" fill="#94a3b8" font-size="7.5" text-anchor="middle" xml:space="preserve">LN2</text>
+<rect x="487" y="100" width="29" height="44" rx="4" fill="#0f172a"/>
+<rect x="487" y="100" width="29" height="44" rx="4" fill="rgba(6,78,59,0.4)" stroke="#34d399" stroke-width="1.8"/>
+<text x="501.5" y="119" fill="white" font-size="10" font-weight="700" text-anchor="middle" xml:space="preserve">13</text>
+<text x="501.5" y="135" fill="#34d399" font-size="7.5" font-weight="600" text-anchor="middle" xml:space="preserve">mm</text>
+<text x="501.5" y="160" fill="#94a3b8" font-size="7.5" text-anchor="middle" xml:space="preserve">fc1</text>
+<rect x="520" y="100" width="29" height="44" rx="4" fill="#0f172a"/>
+<rect x="520" y="100" width="29" height="44" rx="4" fill="rgba(6,78,59,0.4)" stroke="#34d399" stroke-width="1.8"/>
+<text x="534.5" y="119" fill="white" font-size="10" font-weight="700" text-anchor="middle" xml:space="preserve">14</text>
+<text x="534.5" y="135" fill="#34d399" font-size="7.5" font-weight="600" text-anchor="middle" xml:space="preserve">mm</text>
+<text x="534.5" y="160" fill="#94a3b8" font-size="7.5" text-anchor="middle" xml:space="preserve">fc2</text>
+<rect x="553" y="100" width="29" height="44" rx="4" fill="#0f172a"/>
+<rect x="553" y="100" width="29" height="44" rx="4" fill="rgba(30,41,59,0.5)" stroke="#94a3b8" stroke-width="1"/>
+<text x="567.5" y="119" fill="white" font-size="10" font-weight="700" text-anchor="middle" xml:space="preserve">3</text>
+<text x="567.5" y="135" fill="#94a3b8" font-size="7.5" font-weight="600" text-anchor="middle" xml:space="preserve">red</text>
+<text x="567.5" y="160" fill="#94a3b8" font-size="7.5" text-anchor="middle" xml:space="preserve">LN1</text>
+<rect x="586" y="100" width="29" height="44" rx="4" fill="#0f172a"/>
+<rect x="586" y="100" width="29" height="44" rx="4" fill="rgba(30,41,59,0.5)" stroke="#94a3b8" stroke-width="1"/>
+<text x="600.5" y="119" fill="white" font-size="10" font-weight="700" text-anchor="middle" xml:space="preserve">16</text>
+<text x="600.5" y="135" fill="#94a3b8" font-size="7.5" font-weight="600" text-anchor="middle" xml:space="preserve">red</text>
+<text x="600.5" y="160" fill="#94a3b8" font-size="7.5" text-anchor="middle" xml:space="preserve">LN1</text>
+<rect x="619" y="100" width="29" height="44" rx="4" fill="#0f172a"/>
+<rect x="619" y="100" width="29" height="44" rx="4" fill="rgba(6,78,59,0.4)" stroke="#34d399" stroke-width="1.8"/>
+<text x="633.5" y="119" fill="white" font-size="10" font-weight="700" text-anchor="middle" xml:space="preserve">5</text>
+<text x="633.5" y="135" fill="#34d399" font-size="7.5" font-weight="600" text-anchor="middle" xml:space="preserve">mm</text>
+<text x="633.5" y="160" fill="#94a3b8" font-size="7.5" text-anchor="middle" xml:space="preserve">qkv</text>
+<rect x="652" y="100" width="29" height="44" rx="4" fill="#0f172a"/>
+<rect x="652" y="100" width="29" height="44" rx="4" fill="rgba(6,78,59,0.4)" stroke="#34d399" stroke-width="1.8"/>
+<text x="666.5" y="119" fill="white" font-size="10" font-weight="700" text-anchor="middle" xml:space="preserve">6</text>
+<text x="666.5" y="135" fill="#34d399" font-size="7.5" font-weight="600" text-anchor="middle" xml:space="preserve">T</text>
+<text x="666.5" y="160" fill="#94a3b8" font-size="7.5" text-anchor="middle" xml:space="preserve">分头</text>
+<rect x="685" y="100" width="29" height="44" rx="4" fill="#0f172a"/>
+<rect x="685" y="100" width="29" height="44" rx="4" fill="rgba(6,78,59,0.4)" stroke="#34d399" stroke-width="1.8"/>
+<text x="699.5" y="119" fill="white" font-size="10" font-weight="700" text-anchor="middle" xml:space="preserve">7</text>
+<text x="699.5" y="135" fill="#34d399" font-size="7.5" font-weight="600" text-anchor="middle" xml:space="preserve">bmm</text>
+<text x="699.5" y="160" fill="#94a3b8" font-size="7.5" text-anchor="middle" xml:space="preserve">QKᵀ</text>
+<rect x="718" y="100" width="29" height="44" rx="4" fill="#0f172a"/>
+<rect x="718" y="100" width="29" height="44" rx="4" fill="rgba(6,78,59,0.4)" stroke="#34d399" stroke-width="1.8"/>
+<text x="732.5" y="119" fill="white" font-size="10" font-weight="700" text-anchor="middle" xml:space="preserve">8</text>
+<text x="732.5" y="135" fill="#34d399" font-size="7.5" font-weight="600" text-anchor="middle" xml:space="preserve">smax</text>
+<text x="732.5" y="160" fill="#94a3b8" font-size="7.5" text-anchor="middle" xml:space="preserve">smax</text>
+<rect x="751" y="100" width="29" height="44" rx="4" fill="#0f172a"/>
+<rect x="751" y="100" width="29" height="44" rx="4" fill="rgba(6,78,59,0.4)" stroke="#34d399" stroke-width="1.8"/>
+<text x="765.5" y="119" fill="white" font-size="10" font-weight="700" text-anchor="middle" xml:space="preserve">9</text>
+<text x="765.5" y="135" fill="#34d399" font-size="7.5" font-weight="600" text-anchor="middle" xml:space="preserve">bmm</text>
+<text x="765.5" y="160" fill="#94a3b8" font-size="7.5" text-anchor="middle" xml:space="preserve">AV</text>
+<rect x="784" y="100" width="29" height="44" rx="4" fill="#0f172a"/>
+<rect x="784" y="100" width="29" height="44" rx="4" fill="rgba(6,78,59,0.4)" stroke="#34d399" stroke-width="1.8"/>
+<text x="798.5" y="119" fill="white" font-size="10" font-weight="700" text-anchor="middle" xml:space="preserve">10</text>
+<text x="798.5" y="135" fill="#34d399" font-size="7.5" font-weight="600" text-anchor="middle" xml:space="preserve">mm</text>
+<text x="798.5" y="160" fill="#94a3b8" font-size="7.5" text-anchor="middle" xml:space="preserve">proj</text>
+<rect x="817" y="100" width="29" height="44" rx="4" fill="#0f172a"/>
+<rect x="817" y="100" width="29" height="44" rx="4" fill="rgba(30,41,59,0.5)" stroke="#94a3b8" stroke-width="1"/>
+<text x="831.5" y="119" fill="white" font-size="10" font-weight="700" text-anchor="middle" xml:space="preserve">3</text>
+<text x="831.5" y="135" fill="#94a3b8" font-size="7.5" font-weight="600" text-anchor="middle" xml:space="preserve">red</text>
+<text x="831.5" y="160" fill="#94a3b8" font-size="7.5" text-anchor="middle" xml:space="preserve">LN2</text>
+<rect x="850" y="100" width="29" height="44" rx="4" fill="#0f172a"/>
+<rect x="850" y="100" width="29" height="44" rx="4" fill="rgba(30,41,59,0.5)" stroke="#94a3b8" stroke-width="1"/>
+<text x="864.5" y="119" fill="white" font-size="10" font-weight="700" text-anchor="middle" xml:space="preserve">24</text>
+<text x="864.5" y="135" fill="#94a3b8" font-size="7.5" font-weight="600" text-anchor="middle" xml:space="preserve">red</text>
+<text x="864.5" y="160" fill="#94a3b8" font-size="7.5" text-anchor="middle" xml:space="preserve">LN2</text>
+<rect x="883" y="100" width="29" height="44" rx="4" fill="#0f172a"/>
+<rect x="883" y="100" width="29" height="44" rx="4" fill="rgba(6,78,59,0.4)" stroke="#34d399" stroke-width="1.8"/>
+<text x="897.5" y="119" fill="white" font-size="10" font-weight="700" text-anchor="middle" xml:space="preserve">13</text>
+<text x="897.5" y="135" fill="#34d399" font-size="7.5" font-weight="600" text-anchor="middle" xml:space="preserve">mm</text>
+<text x="897.5" y="160" fill="#94a3b8" font-size="7.5" text-anchor="middle" xml:space="preserve">fc1</text>
+<rect x="916" y="100" width="29" height="44" rx="4" fill="#0f172a"/>
+<rect x="916" y="100" width="29" height="44" rx="4" fill="rgba(6,78,59,0.4)" stroke="#34d399" stroke-width="1.8"/>
+<text x="930.5" y="119" fill="white" font-size="10" font-weight="700" text-anchor="middle" xml:space="preserve">26</text>
+<text x="930.5" y="135" fill="#34d399" font-size="7.5" font-weight="600" text-anchor="middle" xml:space="preserve">mm</text>
+<text x="930.5" y="160" fill="#94a3b8" font-size="7.5" text-anchor="middle" xml:space="preserve">fc2</text>
+<rect x="949" y="100" width="29" height="44" rx="4" fill="#0f172a"/>
+<rect x="949" y="100" width="29" height="44" rx="4" fill="rgba(30,41,59,0.5)" stroke="#94a3b8" stroke-width="1"/>
+<text x="963.5" y="119" fill="white" font-size="10" font-weight="700" text-anchor="middle" xml:space="preserve">27</text>
+<text x="963.5" y="135" fill="#94a3b8" font-size="7.5" font-weight="600" text-anchor="middle" xml:space="preserve">elt</text>
+<text x="963.5" y="160" fill="#94a3b8" font-size="7.5" text-anchor="middle" xml:space="preserve">LN</text>
+<rect x="982" y="100" width="29" height="44" rx="4" fill="#0f172a"/>
+<rect x="982" y="100" width="29" height="44" rx="4" fill="rgba(30,41,59,0.5)" stroke="#94a3b8" stroke-width="1"/>
+<text x="996.5" y="119" fill="white" font-size="10" font-weight="700" text-anchor="middle" xml:space="preserve">28</text>
+<text x="996.5" y="135" fill="#94a3b8" font-size="7.5" font-weight="600" text-anchor="middle" xml:space="preserve">red</text>
+<text x="996.5" y="160" fill="#94a3b8" font-size="7.5" text-anchor="middle" xml:space="preserve">LN</text>
+<rect x="1015" y="100" width="29" height="44" rx="4" fill="#0f172a"/>
+<rect x="1015" y="100" width="29" height="44" rx="4" fill="rgba(30,41,59,0.5)" stroke="#94a3b8" stroke-width="1"/>
+<text x="1029.5" y="119" fill="white" font-size="10" font-weight="700" text-anchor="middle" xml:space="preserve">29</text>
+<text x="1029.5" y="135" fill="#94a3b8" font-size="7.5" font-weight="600" text-anchor="middle" xml:space="preserve">elt</text>
+<text x="1029.5" y="160" fill="#94a3b8" font-size="7.5" text-anchor="middle" xml:space="preserve">LN</text>
+<rect x="1048" y="100" width="29" height="44" rx="4" fill="#0f172a"/>
+<rect x="1048" y="100" width="29" height="44" rx="4" fill="rgba(30,41,59,0.5)" stroke="#94a3b8" stroke-width="1"/>
+<text x="1062.5" y="119" fill="white" font-size="10" font-weight="700" text-anchor="middle" xml:space="preserve">30</text>
+<text x="1062.5" y="135" fill="#94a3b8" font-size="7.5" font-weight="600" text-anchor="middle" xml:space="preserve">red</text>
+<text x="1062.5" y="160" fill="#94a3b8" font-size="7.5" text-anchor="middle" xml:space="preserve">LN</text>
+<rect x="1081" y="100" width="29" height="44" rx="4" fill="#0f172a"/>
+<rect x="1081" y="100" width="29" height="44" rx="4" fill="rgba(30,41,59,0.5)" stroke="#94a3b8" stroke-width="1"/>
+<text x="1095.5" y="119" fill="white" font-size="10" font-weight="700" text-anchor="middle" xml:space="preserve">31</text>
+<text x="1095.5" y="135" fill="#94a3b8" font-size="7.5" font-weight="600" text-anchor="middle" xml:space="preserve">elt</text>
+<text x="1095.5" y="160" fill="#94a3b8" font-size="7.5" text-anchor="middle" xml:space="preserve">LN</text>
+<rect x="1114" y="100" width="29" height="44" rx="4" fill="#0f172a"/>
+<rect x="1114" y="100" width="29" height="44" rx="4" fill="rgba(6,78,59,0.4)" stroke="#34d399" stroke-width="1.8"/>
+<text x="1128.5" y="119" fill="white" font-size="10" font-weight="700" text-anchor="middle" xml:space="preserve">32</text>
+<text x="1128.5" y="135" fill="#34d399" font-size="7.5" font-weight="600" text-anchor="middle" xml:space="preserve">vm</text>
+<text x="1128.5" y="160" fill="#94a3b8" font-size="7.5" text-anchor="middle" xml:space="preserve">head</text>
+<text x="58" y="186" fill="#64748b" font-size="8" xml:space="preserve">第一行缩写 = 编译器起的类型名：mm 矩阵乘 · bmm 批量矩阵乘 · smax softmax · vm 向量×矩阵 · T transpose · red reduction · elt elementwise</text>
+<text x="58" y="204" fill="#64748b" font-size="8" xml:space="preserve">第二行 = 它在模型里的角色。block 2 里编号 3、5–10、13 与 block 1 相同 —— 形状一样，复用同一份二进制；LN 的第二个 reduction 与 fc2 各有独立版本</text>
+<text x="58" y="232" fill="#64748b" font-size="8" xml:space="preserve">口径：编号与类型来自 flow.mlir 的调用序列；NPU / 主机归属来自导出目录里哪些单元生成了 riscv_32 ELF</text>
+<rect x="40" y="275" width="1120" height="190" rx="12" fill="rgba(76,29,149,0.08)" stroke="#a78bfa" stroke-width="1" stroke-dasharray="8,4"/><text x="54" y="297" fill="#a78bfa" font-size="11" font-weight="600" xml:space="preserve">② 分给谁 —— 编译器自己的估算（--coralnpu-dump-affinity-profile-format=pretty 的输出）</text>
+<text x="300" y="339" fill="white" font-size="9.5" font-weight="600" text-anchor="end" xml:space="preserve">按估算工作量（Op-Elems）</text>
+<rect x="320" y="322" width="647" height="26" rx="3" fill="rgba(6,78,59,0.4)" stroke="#34d399" stroke-width="1.5"/>
+<rect x="967" y="322" width="153" height="26" rx="3" fill="rgba(30,41,59,0.5)" stroke="#94a3b8" stroke-width="1"/>
+<text x="643.6" y="339" fill="white" font-size="9" font-weight="600" text-anchor="middle" xml:space="preserve">NPU 80.9% · 1.28 M</text>
+<text x="1043.6000000000001" y="339" fill="white" font-size="8.5" text-anchor="middle" xml:space="preserve">主机 19.1% · 0.30 M</text>
+<text x="300" y="385" fill="white" font-size="9.5" font-weight="600" text-anchor="end" xml:space="preserve">按 dispatch 次数</text>
+<rect x="320" y="368" width="436" height="26" rx="3" fill="rgba(6,78,59,0.4)" stroke="#34d399" stroke-width="1.5"/>
+<rect x="756" y="368" width="364" height="26" rx="3" fill="rgba(30,41,59,0.5)" stroke="#94a3b8" stroke-width="1"/>
+<text x="538.0" y="385" fill="white" font-size="9" font-weight="600" text-anchor="middle" xml:space="preserve">NPU 54.5% · 18 次</text>
+<text x="938.0" y="385" fill="white" font-size="8.5" text-anchor="middle" xml:space="preserve">主机 45.5% · 15 次</text>
+<text x="60" y="428" fill="#64748b" font-size="8" xml:space="preserve">口径：两条均为整次推理的总量，800 px = 100%。工作量是编译器按张量元素数做的静态估算，不是仿真器实测的周期数</text>
+<text x="60" y="446" fill="#64748b" font-size="8" xml:space="preserve">去 NPU 的：全部矩阵乘、注意力两个 bmm、softmax、分头 transpose、分类头。留主机的：layernorm 的均值方差（reduction）与零碎逐元素运算</text>
+<rect x="900" y="400" width="246" height="58" rx="6" fill="rgba(30,41,59,0.5)" stroke="#475569" stroke-width="1"/>
+<text x="912" y="415" fill="white" font-size="8.5" font-weight="600" xml:space="preserve">怎么读这张图</text>
+<rect x="912" y="422" width="14" height="10" rx="2" fill="rgba(6,78,59,0.4)" stroke="#34d399" stroke-width="1.5"/>
+<text x="932" y="431" fill="#94a3b8" font-size="8" xml:space="preserve">绿 = 在 NPU（MPACT）上执行</text>
+<rect x="912" y="438" width="14" height="10" rx="2" fill="rgba(30,41,59,0.5)" stroke="#94a3b8" stroke-width="1"/>
+<text x="932" y="447" fill="#94a3b8" font-size="8" xml:space="preserve">灰 = 在主机 x86 上执行</text>
+<text x="600" y="490" fill="#fb923c" font-size="10" font-weight="600" text-anchor="middle" xml:space="preserve">次数上两边接近五五开，但重活几乎都在 NPU：18 次 dispatch 承担了 81% 的估算工作量</text>
+</svg>
+</div>
+<div class="cards"><div class="card"><div class="card-header"><div class="card-dot emerald"></div><h3>NPU 拿到了什么</h3></div><ul><li>• 全部 7 类矩阵乘：patch 投影、qkv、注意力输出、fc1、fc2（两个版本）、分类头</li><li>• 注意力核心：QKᵀ 和 AV 两个批量矩阵乘，以及中间的 softmax</li><li>• 一个 PyTorch 风格的分头 transpose 也被放上了 NPU</li></ul></div><div class="card"><div class="card-header"><div class="card-dot slate"></div><h3>主机留下了什么</h3></div><ul><li>• layernorm 的均值和方差：每个 LN 是两次 reduction，全模型 5 个 LN</li><li>• patch 重排、cls 拼接与位置编码相加、末层 LN 的逐元素部分</li><li>• 这些运算量小，放 NPU 的收益抵不过下发开销</li></ul></div><div class="card"><div class="card-header"><div class="card-dot amber"></div><h3>这张图的局限</h3></div><ul><li>• 占比是编译器的静态估算，不是实测；这条路线的运行器目前不输出 NPU 周期数</li><li>• 每次 NPU dispatch 都要经过装载 ELF、搬数据、启动仿真，真实硬件上这部分开销需要单独评估</li><li>• 想减少来回切换，方向是让 layernorm 也能融合进 NPU 内核</li></ul></div></div>
+
+<h2 class="section-title"><span class="num rose">图五</span>NPU 内核里到底是什么指令<span class="hint">指令构成 · 内层循环原文</span></h2>
+<div class="diagram-container">
+<svg viewBox="0 0 1200 614">
+<defs>
+          <marker id="arrowhead" markerWidth="7" markerHeight="5" refX="6" refY="2.5" orient="auto">
+            <polygon points="0 0, 7 2.5, 0 5" fill="#94a3b8" />
+          </marker>
+          <marker id="arrow-cyan" markerWidth="7" markerHeight="5" refX="6" refY="2.5" orient="auto">
+            <polygon points="0 0, 7 2.5, 0 5" fill="#22d3ee" />
+          </marker>
+          <marker id="arrow-emerald" markerWidth="7" markerHeight="5" refX="6" refY="2.5" orient="auto">
+            <polygon points="0 0, 7 2.5, 0 5" fill="#34d399" />
+          </marker>
+          <marker id="arrow-amber" markerWidth="7" markerHeight="5" refX="6" refY="2.5" orient="auto">
+            <polygon points="0 0, 7 2.5, 0 5" fill="#fbbf24" />
+          </marker>
+          <marker id="arrow-violet" markerWidth="7" markerHeight="5" refX="6" refY="2.5" orient="auto">
+            <polygon points="0 0, 7 2.5, 0 5" fill="#a78bfa" />
+          </marker>
+          <marker id="arrow-rose" markerWidth="7" markerHeight="5" refX="6" refY="2.5" orient="auto">
+            <polygon points="0 0, 7 2.5, 0 5" fill="#fb7185" />
+          </marker>
+          <marker id="arrow-orange" markerWidth="7" markerHeight="5" refX="6" refY="2.5" orient="auto">
+            <polygon points="0 0, 7 2.5, 0 5" fill="#fb923c" />
+          </marker>
+          <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+            <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#1e293b" stroke-width="0.5"/>
+          </pattern>
+        </defs>
+<rect width="100%" height="100%" fill="url(#grid)" />
+<rect x="40" y="30" width="1120" height="250" rx="12" fill="rgba(120,53,15,0.08)" stroke="#fbbf24" stroke-width="1" stroke-dasharray="8,4"/><text x="54" y="52" fill="#fbbf24" font-size="11" font-weight="600" xml:space="preserve">① NPU 内核函数里都是什么指令 —— 只统计内核函数本身，不含同文件里的运行时辅助函数</text>
+<text x="60" y="76" fill="white" font-size="9.5" font-weight="600" xml:space="preserve">dispatch_5 矩阵乘 17×32·32×96  ——  共 304 条指令</text>
+<rect x="60.0" y="84" width="32.0" height="28" rx="2" fill="rgba(120,53,15,0.4)" stroke="#fbbf24" stroke-width="1.2"/>
+<text x="75.98684210526315" y="102" fill="white" font-size="8" text-anchor="middle" xml:space="preserve">9</text>
+<rect x="92.0" y="84" width="415.7" height="28" rx="2" fill="rgba(76,29,149,0.4)" stroke="#a78bfa" stroke-width="1.2"/>
+<text x="299.80263157894734" y="102" fill="white" font-size="8.5" font-weight="600" text-anchor="middle" xml:space="preserve">117 · 38%</text>
+<rect x="507.6" y="84" width="3.6" height="28" rx="2" fill="rgba(136,19,55,0.3)" stroke="#fb7185" stroke-width="1.2"/>
+<rect x="511.2" y="84" width="628.8" height="28" rx="2" fill="rgba(30,41,59,0.5)" stroke="#94a3b8" stroke-width="1.2"/>
+<text x="825.5921052631578" y="102" fill="white" font-size="8.5" font-weight="600" text-anchor="middle" xml:space="preserve">177 · 58%</text>
+<text x="60" y="154" fill="white" font-size="9.5" font-weight="600" xml:space="preserve">dispatch_8 softmax 2×17×17  ——  共 255 条指令</text>
+<rect x="60.0" y="162" width="173.6" height="28" rx="2" fill="rgba(120,53,15,0.4)" stroke="#fbbf24" stroke-width="1.2"/>
+<text x="146.8235294117647" y="180" fill="white" font-size="8.5" font-weight="600" text-anchor="middle" xml:space="preserve">41 · 16%</text>
+<rect x="233.6" y="162" width="232.9" height="28" rx="2" fill="rgba(76,29,149,0.4)" stroke="#a78bfa" stroke-width="1.2"/>
+<text x="350.11764705882354" y="180" fill="white" font-size="8.5" font-weight="600" text-anchor="middle" xml:space="preserve">55 · 22%</text>
+<rect x="466.6" y="162" width="101.6" height="28" rx="2" fill="rgba(136,19,55,0.3)" stroke="#fb7185" stroke-width="1.2"/>
+<text x="517.4117647058824" y="180" fill="white" font-size="8.5" font-weight="600" text-anchor="middle" xml:space="preserve">24 · 9%</text>
+<rect x="568.2" y="162" width="571.8" height="28" rx="2" fill="rgba(30,41,59,0.5)" stroke="#94a3b8" stroke-width="1.2"/>
+<text x="854.1176470588235" y="180" fill="white" font-size="8.5" font-weight="600" text-anchor="middle" xml:space="preserve">135 · 53%</text>
+<rect x="60" y="232" width="14" height="10" rx="2" fill="rgba(120,53,15,0.4)" stroke="#fbbf24" stroke-width="1.2"/>
+<text x="80" y="241" fill="#94a3b8" font-size="8" xml:space="preserve">向量浮点 vf*</text>
+<rect x="230" y="232" width="14" height="10" rx="2" fill="rgba(76,29,149,0.4)" stroke="#a78bfa" stroke-width="1.2"/>
+<text x="250" y="241" fill="#94a3b8" font-size="8" xml:space="preserve">向量其他 v*</text>
+<rect x="400" y="232" width="14" height="10" rx="2" fill="rgba(136,19,55,0.3)" stroke="#fb7185" stroke-width="1.2"/>
+<text x="420" y="241" fill="#94a3b8" font-size="8" xml:space="preserve">标量浮点 f*</text>
+<rect x="570" y="232" width="14" height="10" rx="2" fill="rgba(30,41,59,0.5)" stroke="#94a3b8" stroke-width="1.2"/>
+<text x="590" y="241" fill="#94a3b8" font-size="8" xml:space="preserve">标量整数与控制</text>
+<text x="760" y="241" fill="#64748b" font-size="8" xml:space="preserve">口径：条宽 1080 px = 该内核 100% 指令；数的是汇编里的静态指令条数，不是执行次数</text>
+<text x="60" y="266" fill="#64748b" font-size="8" xml:space="preserve">矩阵乘内核只有 9 条向量浮点指令，但它们在最内层循环里，执行次数占绝大多数；117 条“向量其他”是取数、掩码、寄存器搬运</text>
+<rect x="40" y="310" width="1120" height="250" rx="12" fill="rgba(6,78,59,0.08)" stroke="#34d399" stroke-width="1" stroke-dasharray="8,4"/><text x="54" y="332" fill="#34d399" font-size="11" font-weight="600" xml:space="preserve">② 矩阵乘最内层循环原文（main_dispatch_5 的 .s 文件）</text>
+<rect x="60" y="346" width="640" height="196" rx="6" fill="#0b1220" stroke="#1e293b" stroke-width="1"/>
+<text x="76" y="366" fill="#cbd5e1" font-size="8.5" font-family="'JetBrains Mono','Menlo','SF Mono','Consolas','DejaVu Sans Mono',monospace" xml:space="preserve">vsetivli   zero, 8, e32, m2, ta, ma</text>
+<text x="76" y="382" fill="#cbd5e1" font-size="8.5" font-family="'JetBrains Mono','Menlo','SF Mono','Consolas','DejaVu Sans Mono',monospace" xml:space="preserve">vmv1r.v    v0, v1</text>
+<text x="76" y="398" fill="#cbd5e1" font-size="8.5" font-family="'JetBrains Mono','Menlo','SF Mono','Consolas','DejaVu Sans Mono',monospace" xml:space="preserve">slli       t0, s6, 2</text>
+<text x="76" y="414" fill="#cbd5e1" font-size="8.5" font-family="'JetBrains Mono','Menlo','SF Mono','Consolas','DejaVu Sans Mono',monospace" xml:space="preserve">add        t0, a6, t0</text>
+<text x="76" y="430" fill="#cbd5e1" font-size="8.5" font-family="'JetBrains Mono','Menlo','SF Mono','Consolas','DejaVu Sans Mono',monospace" xml:space="preserve">vlse32.v   v18, (t0), a5</text>
+<text x="76" y="446" fill="#cbd5e1" font-size="8.5" font-family="'JetBrains Mono','Menlo','SF Mono','Consolas','DejaVu Sans Mono',monospace" xml:space="preserve">vrgather.vi v16, v2, 0</text>
+<text x="76" y="462" fill="#cbd5e1" font-size="8.5" font-family="'JetBrains Mono','Menlo','SF Mono','Consolas','DejaVu Sans Mono',monospace" xml:space="preserve"><tspan fill="#fbbf24" font-weight="600">vfmadd.vv</tspan>  v16, v18, v4</text>
+<text x="76" y="478" fill="#cbd5e1" font-size="8.5" font-family="'JetBrains Mono','Menlo','SF Mono','Consolas','DejaVu Sans Mono',monospace" xml:space="preserve">vmerge.vvm v4, v4, v16, v0</text>
+<text x="76" y="494" fill="#cbd5e1" font-size="8.5" font-family="'JetBrains Mono','Menlo','SF Mono','Consolas','DejaVu Sans Mono',monospace" xml:space="preserve">vrgather.vi v16, v2, 1</text>
+<text x="76" y="510" fill="#cbd5e1" font-size="8.5" font-family="'JetBrains Mono','Menlo','SF Mono','Consolas','DejaVu Sans Mono',monospace" xml:space="preserve"><tspan fill="#fbbf24" font-weight="600">vfmadd.vv</tspan>  v16, v18, v6</text>
+<text x="76" y="526" fill="#cbd5e1" font-size="8.5" font-family="'JetBrains Mono','Menlo','SF Mono','Consolas','DejaVu Sans Mono',monospace" xml:space="preserve">vmerge.vvm v6, v6, v16, v0</text>
+<line x1="330" y1="363" x2="716" y2="363" stroke="#fbbf24" stroke-width="0.8" stroke-dasharray="3,3"/>
+<text x="724" y="366" fill="#fbbf24" font-size="8.5" xml:space="preserve">设向量长度 8、元素宽 32 位 —— 一次处理 8 个 f32</text>
+<line x1="330" y1="427" x2="716" y2="427" stroke="#a78bfa" stroke-width="0.8" stroke-dasharray="3,3"/>
+<text x="724" y="430" fill="#a78bfa" font-size="8.5" xml:space="preserve">按步长 a5 从矩阵里取一列的 8 个元素</text>
+<line x1="330" y1="459" x2="716" y2="459" stroke="#fbbf24" stroke-width="0.8" stroke-dasharray="3,3"/>
+<text x="724" y="462" fill="#fbbf24" font-size="8.5" xml:space="preserve">8 路融合乘加：v16 = v16 × v18 + v4，一条指令 8 个浮点</text>
+<line x1="330" y1="475" x2="716" y2="475" stroke="#a78bfa" stroke-width="0.8" stroke-dasharray="3,3"/>
+<text x="724" y="478" fill="#a78bfa" font-size="8.5" xml:space="preserve">按掩码 v0 选择性地把结果写回累加器 v4</text>
+<text x="724" y="518" fill="#64748b" font-size="8" xml:space="preserve">同一个 .s 文件总共 1,227 条指令，内核只占 304 条；</text>
+<text x="724" y="534" fill="#64748b" font-size="8" xml:space="preserve">其余是链接进来的运行时辅助函数（半精度转换、fma 等）</text>
+<text x="600" y="592" fill="#fb923c" font-size="10" font-weight="600" text-anchor="middle" xml:space="preserve">f32 矩阵乘在 NPU 上是向量化执行的：编译目标特性含 +zve32f，内核用 vfmadd.vv 一次算 8 个浮点乘加</text>
+</svg>
+</div>
+<div class="cards"><div class="card"><div class="card-header"><div class="card-dot amber"></div><h3>结论：f32 是向量化执行的</h3></div><ul><li>• 编译目标特性 +m,+f,+zvl128b,+zve32f：128 位向量寄存器，支持 32 位浮点向量</li><li>• 128 位装 4 个 f32；内核用 LMUL=2（m2）把两个寄存器拼起来，一次算 8 个</li><li>• softmax 内核的向量浮点指令更多（41 条），同时还保留了 24 条标量浮点</li></ul></div><div class="card"><div class="card-header"><div class="card-dot rose"></div><h3>一处需要更正的说法</h3></div><ul><li>• 此前曾据整份 .s 文件的统计得出“浮点是标量执行”的结论，那是错的</li><li>• 整份文件 1,227 条指令里有 923 条属于链接进来的运行时辅助函数，标量浮点几乎都在那里</li><li>• 只看内核函数：矩阵乘 304 条里标量浮点仅 1 条</li></ul></div><div class="card"><div class="card-header"><div class="card-dot violet"></div><h3>一个尚未解释的出入</h3></div><ul><li>• coralnpu 硬件仓库 README 写的指令集是 rv32imf_zve32x（整数向量）</li><li>• 而编译器以 zve32f（浮点向量）为目标，MPACT 仿真器也正确执行了这些指令</li><li>• 真实 RTL 是否支持浮点向量，需要到 Verilator 周期精确仿真上验证，目前未做</li></ul></div></div>
+
+<h2 class="section-title"><span class="num cyan">图六</span>结果验证：NPU 输出对比 PyTorch 参考<span class="hint">logits · 逐类误差</span></h2>
+<div class="diagram-container">
+<svg viewBox="0 0 1200 484">
+<defs>
+          <marker id="arrowhead" markerWidth="7" markerHeight="5" refX="6" refY="2.5" orient="auto">
+            <polygon points="0 0, 7 2.5, 0 5" fill="#94a3b8" />
+          </marker>
+          <marker id="arrow-cyan" markerWidth="7" markerHeight="5" refX="6" refY="2.5" orient="auto">
+            <polygon points="0 0, 7 2.5, 0 5" fill="#22d3ee" />
+          </marker>
+          <marker id="arrow-emerald" markerWidth="7" markerHeight="5" refX="6" refY="2.5" orient="auto">
+            <polygon points="0 0, 7 2.5, 0 5" fill="#34d399" />
+          </marker>
+          <marker id="arrow-amber" markerWidth="7" markerHeight="5" refX="6" refY="2.5" orient="auto">
+            <polygon points="0 0, 7 2.5, 0 5" fill="#fbbf24" />
+          </marker>
+          <marker id="arrow-violet" markerWidth="7" markerHeight="5" refX="6" refY="2.5" orient="auto">
+            <polygon points="0 0, 7 2.5, 0 5" fill="#a78bfa" />
+          </marker>
+          <marker id="arrow-rose" markerWidth="7" markerHeight="5" refX="6" refY="2.5" orient="auto">
+            <polygon points="0 0, 7 2.5, 0 5" fill="#fb7185" />
+          </marker>
+          <marker id="arrow-orange" markerWidth="7" markerHeight="5" refX="6" refY="2.5" orient="auto">
+            <polygon points="0 0, 7 2.5, 0 5" fill="#fb923c" />
+          </marker>
+          <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+            <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#1e293b" stroke-width="0.5"/>
+          </pattern>
+        </defs>
+<rect width="100%" height="100%" fill="url(#grid)" />
+<rect x="40" y="30" width="1120" height="400" rx="12" fill="rgba(8,51,68,0.10)" stroke="#22d3ee" stroke-width="1" stroke-dasharray="8,4"/><text x="54" y="52" fill="#22d3ee" font-size="11" font-weight="600" xml:space="preserve">① 10 个类别的 logits：PyTorch 参考值 vs NPU 仿真输出 —— 同一张输入（固定种子的 1×32×32×3 随机张量）</text>
+<line x1="90" y1="210" x2="1130" y2="210" stroke="#475569" stroke-width="1"/>
+<line x1="90" y1="118" x2="1130" y2="118" stroke="#1e293b" stroke-width="1" stroke-dasharray="2,4"/>
+<text x="84" y="121.0" fill="#64748b" font-size="7.5" text-anchor="end" xml:space="preserve">+0.4</text>
+<line x1="90" y1="164" x2="1130" y2="164" stroke="#1e293b" stroke-width="1" stroke-dasharray="2,4"/>
+<text x="84" y="167.0" fill="#64748b" font-size="7.5" text-anchor="end" xml:space="preserve">+0.2</text>
+<line x1="90" y1="256" x2="1130" y2="256" stroke="#1e293b" stroke-width="1" stroke-dasharray="2,4"/>
+<text x="84" y="259.0" fill="#64748b" font-size="7.5" text-anchor="end" xml:space="preserve">-0.2</text>
+<line x1="90" y1="302" x2="1130" y2="302" stroke="#1e293b" stroke-width="1" stroke-dasharray="2,4"/>
+<text x="84" y="305.0" fill="#64748b" font-size="7.5" text-anchor="end" xml:space="preserve">-0.4</text>
+<line x1="90" y1="348" x2="1130" y2="348" stroke="#1e293b" stroke-width="1" stroke-dasharray="2,4"/>
+<text x="84" y="351.0" fill="#64748b" font-size="7.5" text-anchor="end" xml:space="preserve">-0.6</text>
+<text x="84" y="213" fill="#64748b" font-size="7.5" text-anchor="end" xml:space="preserve">0</text>
+<rect x="124" y="179.0" width="24" height="31.0" rx="2" fill="rgba(8,51,68,0.45)" stroke="#22d3ee" stroke-width="1.3"/>
+<rect x="152" y="179.0" width="24" height="31.0" rx="2" fill="rgba(6,78,59,0.4)" stroke="#34d399" stroke-width="1.3"/>
+<text x="150" y="171.04757648706436" fill="#cbd5e1" font-size="8" text-anchor="middle" xml:space="preserve">+0.1346</text>
+<text x="150" y="386" fill="#94a3b8" font-size="8.5" font-weight="600" text-anchor="middle" xml:space="preserve">类别 0</text>
+<text x="150" y="402" fill="#64748b" font-size="7.5" text-anchor="middle" xml:space="preserve">|差| 8.4e-06</text>
+<rect x="227" y="210.0" width="24" height="34.4" rx="2" fill="rgba(8,51,68,0.45)" stroke="#22d3ee" stroke-width="1.3"/>
+<rect x="255" y="210.0" width="24" height="34.4" rx="2" fill="rgba(6,78,59,0.4)" stroke="#34d399" stroke-width="1.3"/>
+<text x="253" y="258.3881970643997" fill="#cbd5e1" font-size="8" text-anchor="middle" xml:space="preserve">-0.1495</text>
+<text x="253" y="386" fill="#94a3b8" font-size="8.5" font-weight="600" text-anchor="middle" xml:space="preserve">类别 1</text>
+<text x="253" y="402" fill="#64748b" font-size="7.5" text-anchor="middle" xml:space="preserve">|差| 1.1e-06</text>
+<rect x="330" y="210.0" width="24" height="21.4" rx="2" fill="rgba(8,51,68,0.45)" stroke="#22d3ee" stroke-width="1.3"/>
+<rect x="358" y="210.0" width="24" height="21.4" rx="2" fill="rgba(6,78,59,0.4)" stroke="#34d399" stroke-width="1.3"/>
+<text x="356" y="245.41134724020958" fill="#cbd5e1" font-size="8" text-anchor="middle" xml:space="preserve">-0.0931</text>
+<text x="356" y="386" fill="#94a3b8" font-size="8.5" font-weight="600" text-anchor="middle" xml:space="preserve">类别 2</text>
+<text x="356" y="402" fill="#64748b" font-size="7.5" text-anchor="middle" xml:space="preserve">|差| 1.9e-06</text>
+<rect x="433" y="210.0" width="24" height="24.4" rx="2" fill="rgba(8,51,68,0.45)" stroke="#22d3ee" stroke-width="1.3"/>
+<rect x="461" y="210.0" width="24" height="24.4" rx="2" fill="rgba(6,78,59,0.4)" stroke="#34d399" stroke-width="1.3"/>
+<text x="459" y="248.4258462637663" fill="#cbd5e1" font-size="8" text-anchor="middle" xml:space="preserve">-0.1062</text>
+<text x="459" y="386" fill="#94a3b8" font-size="8.5" font-weight="600" text-anchor="middle" xml:space="preserve">类别 3</text>
+<text x="459" y="402" fill="#64748b" font-size="7.5" text-anchor="middle" xml:space="preserve">|差| 1.8e-06</text>
+<rect x="536" y="210.0" width="24" height="148.9" rx="2" fill="rgba(8,51,68,0.45)" stroke="#22d3ee" stroke-width="1.3"/>
+<rect x="564" y="210.0" width="24" height="148.9" rx="2" fill="rgba(6,78,59,0.4)" stroke="#34d399" stroke-width="1.3"/>
+<text x="562" y="372.85713517665863" fill="#cbd5e1" font-size="8" text-anchor="middle" xml:space="preserve">-0.6472</text>
+<text x="562" y="386" fill="#94a3b8" font-size="8.5" font-weight="600" text-anchor="middle" xml:space="preserve">类别 4</text>
+<text x="562" y="402" fill="#64748b" font-size="7.5" text-anchor="middle" xml:space="preserve">|差| 2.2e-06</text>
+<rect x="639" y="210.0" width="24" height="89.4" rx="2" fill="rgba(8,51,68,0.45)" stroke="#22d3ee" stroke-width="1.3"/>
+<rect x="667" y="210.0" width="24" height="89.4" rx="2" fill="rgba(6,78,59,0.4)" stroke="#34d399" stroke-width="1.3"/>
+<text x="665" y="313.3864634633064" fill="#cbd5e1" font-size="8" text-anchor="middle" xml:space="preserve">-0.3886</text>
+<text x="665" y="386" fill="#94a3b8" font-size="8.5" font-weight="600" text-anchor="middle" xml:space="preserve">类别 5</text>
+<text x="665" y="402" fill="#64748b" font-size="7.5" text-anchor="middle" xml:space="preserve">|差| 4.3e-06</text>
+<rect x="742" y="210.0" width="24" height="98.5" rx="2" fill="rgba(8,51,68,0.45)" stroke="#22d3ee" stroke-width="1.3"/>
+<rect x="770" y="210.0" width="24" height="98.5" rx="2" fill="rgba(6,78,59,0.4)" stroke="#34d399" stroke-width="1.3"/>
+<text x="768" y="322.52945923805237" fill="#cbd5e1" font-size="8" text-anchor="middle" xml:space="preserve">-0.4284</text>
+<text x="768" y="386" fill="#94a3b8" font-size="8.5" font-weight="600" text-anchor="middle" xml:space="preserve">类别 6</text>
+<text x="768" y="402" fill="#64748b" font-size="7.5" text-anchor="middle" xml:space="preserve">|差| 7.1e-06</text>
+<rect x="845" y="207.7" width="24" height="2.3" rx="2" fill="rgba(8,51,68,0.45)" stroke="#22d3ee" stroke-width="1.3"/>
+<rect x="873" y="207.7" width="24" height="2.3" rx="2" fill="rgba(6,78,59,0.4)" stroke="#34d399" stroke-width="1.3"/>
+<text x="871" y="199.74363601580262" fill="#cbd5e1" font-size="8" text-anchor="middle" xml:space="preserve">+0.0098</text>
+<text x="871" y="386" fill="#94a3b8" font-size="8.5" font-weight="600" text-anchor="middle" xml:space="preserve">类别 7</text>
+<text x="871" y="402" fill="#64748b" font-size="7.5" text-anchor="middle" xml:space="preserve">|差| 3.7e-06</text>
+<rect x="948" y="210.0" width="24" height="48.3" rx="2" fill="rgba(8,51,68,0.45)" stroke="#22d3ee" stroke-width="1.3"/>
+<rect x="976" y="210.0" width="24" height="48.3" rx="2" fill="rgba(6,78,59,0.4)" stroke="#34d399" stroke-width="1.3"/>
+<text x="974" y="272.28170374035835" fill="#cbd5e1" font-size="8" text-anchor="middle" xml:space="preserve">-0.2099</text>
+<text x="974" y="386" fill="#94a3b8" font-size="8.5" font-weight="600" text-anchor="middle" xml:space="preserve">类别 8</text>
+<text x="974" y="402" fill="#64748b" font-size="7.5" text-anchor="middle" xml:space="preserve">|差| 3.9e-06</text>
+<rect x="1051" y="127.9" width="24" height="82.1" rx="2" fill="rgba(8,51,68,0.45)" stroke="#22d3ee" stroke-width="1.3"/>
+<rect x="1079" y="127.9" width="24" height="82.1" rx="2" fill="rgba(6,78,59,0.4)" stroke="#34d399" stroke-width="1.3"/>
+<text x="1077" y="119.91772127151489" fill="#fbbf24" font-size="8" font-weight="700" text-anchor="middle" xml:space="preserve">+0.3569</text>
+<text x="1077" y="386" fill="#fbbf24" font-size="8.5" font-weight="600" text-anchor="middle" xml:space="preserve">类别 9</text>
+<text x="1077" y="402" fill="#64748b" font-size="7.5" text-anchor="middle" xml:space="preserve">|差| 4.1e-06</text>
+<rect x="880" y="60" width="14" height="10" rx="2" fill="rgba(8,51,68,0.45)" stroke="#22d3ee" stroke-width="1.3"/>
+<text x="900" y="69" fill="#94a3b8" font-size="8" xml:space="preserve">PyTorch 参考（ref_out.npy）</text>
+<rect x="880" y="78" width="14" height="10" rx="2" fill="rgba(6,78,59,0.4)" stroke="#34d399" stroke-width="1.3"/>
+<text x="900" y="87" fill="#94a3b8" font-size="8" xml:space="preserve">NPU 仿真输出（MPACT）</text>
+<text x="60" y="422" fill="#64748b" font-size="8" xml:space="preserve">口径：柱高 230 px = 1.0。两根柱子肉眼无法区分，差异在第 6 位小数：最大 |差| = 8.4e-06，出现在类别 0</text>
+<text x="600" y="462" fill="#fb923c" font-size="10" font-weight="600" text-anchor="middle" xml:space="preserve">top-1 两边都是类别 9；误差量级是 f32 运算顺序不同带来的正常舍入差，说明编译与仿真在功能上完全正确</text>
+</svg>
+</div>
+<div class="cards"><div class="card"><div class="card-header"><div class="card-dot cyan"></div><h3>验证方法</h3></div><ul><li>• 第 1 步在 PyTorch 里用固定种子的输入跑一次前向，存下 ref_in.npy 与 ref_out.npy</li><li>• 第 9 步把同一份输入喂给编译后的模块，逐元素比较 logits</li><li>• 判定标准 np.allclose(atol=1e-3, rtol=1e-3)，实测最大误差 8.4e-06</li></ul></div><div class="card"><div class="card-header"><div class="card-dot emerald"></div><h3>这个结果说明了什么</h3></div><ul><li>• 导出、降级、切分、设备分配、代码生成、仿真执行，整条链路功能正确</li><li>• 权重是随机初始化的，所以“类别 9”本身没有含义，只用来核对两边一致</li><li>• 换成训练过的权重，流程与命令完全不变</li></ul></div><div class="card"><div class="card-header"><div class="card-dot amber"></div><h3>下一步可以做的</h3></div><ul><li>• int8 量化后重走一遍，对比 dispatch 分配和内核指令的变化</li><li>• 同一模型走 TFLM 路线，拿到 MPACT 周期数做两条路线的对比</li><li>• 把同一批 RISC-V ELF 放到 Verilator 上，验证浮点向量指令在 RTL 上的支持情况</li></ul></div></div>
+
+    <!-- Footer -->
+    <p class="footer">
+      Toy ViT → Coral NPU · PyTorch 路线全流程 · 数据采集自 2026-09-17 的一次完整运行
+    </p>
+  </div>
+
+  <script>
+    async function snap() {
+      const el = document.getElementById('report-container');
+      const r = el.getBoundingClientRect();
+      const pad = 32;
+      return html2canvas(document.body, { backgroundColor: '#020617', scale: 2, useCORS: true, ignoreElements: (e) => e.classList && e.classList.contains('toolbar'), x: r.left + window.scrollX - pad, y: r.top + window.scrollY - pad, width: r.width + pad * 2, height: r.height + pad * 2 });
+    }
+
+    async function copyAsImage(btn) {
+      const orig = btn.textContent;
+      try {
+        const canvas = await snap();
+        const blob = await new Promise(r => canvas.toBlob(r, 'image/png'));
+        await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+        btn.textContent = '✓ Copied!';
+      } catch (e) { btn.textContent = '✗ Failed'; }
+      setTimeout(() => btn.textContent = orig, 2000);
+    }
+
+    async function downloadPNG(btn) {
+      const orig = btn.textContent;
+      btn.textContent = '⏳ ...';
+      try {
+        const canvas = await snap();
+        const link = document.createElement('a');
+        link.download = 'tech-deck.png';
+        link.href = canvas.toDataURL('image/png');
+        link.click();
+        btn.textContent = '✓ Done!';
+      } catch (e) { btn.textContent = '✗ Failed'; }
+      setTimeout(() => btn.textContent = orig, 2000);
+    }
+
+    async function downloadPDF(btn) {
+      const orig = btn.textContent;
+      btn.textContent = '⏳ ...';
+      try {
+        const canvas = await snap();
+        const imgData = canvas.toDataURL('image/png');
+        const { jsPDF } = window.jspdf;
+        const orientation = canvas.width > canvas.height ? 'landscape' : 'portrait';
+        const pdf = new jsPDF({ orientation, unit: 'px', format: [canvas.width, canvas.height], hotfixes: ['px_scaling'] });
+        pdf.addImage(imgData, 'PNG', 0, 0, canvas.width, canvas.height);
+        pdf.save('tech-deck.pdf');
+        btn.textContent = '✓ Done!';
+      } catch (e) { btn.textContent = '✗ Failed'; }
+      setTimeout(() => btn.textContent = orig, 2000);
+    }
+  </script>
+</body>
+</html>

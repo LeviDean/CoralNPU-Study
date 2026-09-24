@@ -1,0 +1,794 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>MLIR 逐步拆解</title><style>
+:root{--bg:#fbfbfa;--fg:#1c1d1f;--mut:#5c6370;--line:#dcdfe4;--code:#f2f3f5;--acc:#0b5cad;--ok:#1a7f4b;--warn:#9a5b00;--bad:#b3261e;--npu:#e6f4ec;--host:#f1f2f4}
+@media (prefers-color-scheme:dark){:root{--bg:#15171a;--fg:#e4e6ea;--mut:#9aa3b0;--line:#30353d;--code:#1d2026;--acc:#6db3f2;--ok:#5fc28c;--warn:#e0a445;--bad:#f0827a;--npu:#16302398;--host:#22262c}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.7 -apple-system,"PingFang SC","Hiragino Sans GB","Microsoft YaHei","Segoe UI",sans-serif}
+main{max-width:980px;margin:0 auto;padding:40px 24px 80px}
+h1{font-size:26px;line-height:1.3;margin:0 0 6px}
+h2{font-size:20px;margin:48px 0 12px;padding-top:12px;border-top:1px solid var(--line)}
+h3{font-size:16px;margin:30px 0 8px}
+h4{font-size:14px;margin:18px 0 6px;color:var(--mut);font-weight:600}
+p{margin:8px 0}
+.meta{color:var(--mut);font-size:13px;margin-bottom:22px}
+a{color:var(--acc)}
+code,pre{font-family:"JetBrains Mono","SF Mono",Menlo,Consolas,monospace}
+code{background:var(--code);padding:1px 5px;border-radius:4px;font-size:12.5px}
+figure.code{margin:10px 0 14px}
+figure.code .cap{font-size:12px;color:var(--mut);margin-bottom:4px}
+pre{background:var(--code);border:1px solid var(--line);border-radius:6px;padding:10px 12px;margin:0;font-size:12px;line-height:1.55;overflow-x:auto;white-space:pre}
+.tw{overflow-x:auto;margin:10px 0 16px}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{border:1px solid var(--line);padding:6px 9px;text-align:left;vertical-align:top}
+th{background:var(--code);font-weight:600;white-space:nowrap}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+tr.npu td{background:var(--npu)} tr.host td{background:var(--host)}
+tr.grp td{background:transparent;font-weight:600;color:var(--mut);border-left:none;border-right:none;padding-top:12px}
+.tag{display:inline-block;font-size:11.5px;padding:0 7px;border-radius:9px;border:1px solid currentColor;line-height:18px;white-space:nowrap}
+.ok{color:var(--ok)} .warn{color:var(--warn)} .bad{color:var(--bad)} .mut{color:var(--mut)}
+.note{border-left:3px solid var(--warn);background:var(--code);padding:8px 12px;margin:12px 0;font-size:14px}
+.note.err{border-color:var(--bad)}
+nav{font-size:13.5px;columns:2;column-gap:32px;margin:14px 0 8px}
+nav a{display:block;text-decoration:none;padding:1px 0}
+ul{margin:6px 0 10px;padding-left:22px} li{margin:3px 0}
+.kv td:first-child{white-space:nowrap;color:var(--mut);width:1%}
+@media (max-width:640px){nav{columns:1}main{padding:24px 16px 60px}}
+
+figure.fig{margin:16px 0 20px}
+figure.fig svg{width:100%;height:auto;display:block}
+figure.fig figcaption{font-size:12.5px;color:var(--mut);margin-top:6px}
+.fig text{fill:var(--fg);font-size:12px;font-family:-apple-system,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif}
+.fig .s{fill:var(--mut);font-size:10.5px}
+.fig .m{font-family:"JetBrains Mono","SF Mono",Menlo,Consolas,monospace;font-size:10.5px}
+.fig .b{font-weight:600}
+.fig .bx{fill:var(--bx);stroke:var(--bxs);stroke-width:1}
+.fig .fe{fill:var(--fe);stroke:var(--fes);stroke-width:1}
+.fig .npu{fill:var(--npuf);stroke:var(--npus);stroke-width:1.2}
+.fig .host{fill:var(--hostf);stroke:var(--hosts);stroke-width:1}
+.fig .art{fill:var(--artf);stroke:var(--arts);stroke-width:1}
+.fig .grp{fill:none;stroke:var(--bxs);stroke-width:1;stroke-dasharray:5 4}
+.fig .ar{stroke:var(--mut);stroke-width:1.2;fill:none}
+.fig .ah{fill:var(--mut)}
+.fig .ax{stroke:var(--line);stroke-width:1;fill:none}
+.fig .c1{fill:var(--k1)} .fig .c2{fill:var(--k2)} .fig .c3{fill:var(--k3)} .fig .c4{fill:var(--k4)}
+.fig .ref{fill:var(--fes)} .fig .out{fill:var(--npus)}
+:root{--bx:#fff;--bxs:#b9bfc9;--fe:#eaf2fb;--fes:#4a86c5;--npuf:#e3f3ea;--npus:#2e8b57;--hostf:#eef0f3;--hosts:#8a93a1;--artf:#fdf4e1;--arts:#c08a1e;--k1:#d9881a;--k2:#7a5cc0;--k3:#c94f4f;--k4:#aab1bc}
+@media (prefers-color-scheme:dark){:root{--bx:#1b1e23;--bxs:#4a515c;--fe:#14263a;--fes:#5b9bd8;--npuf:#143023;--npus:#4fb381;--hostf:#23272d;--hosts:#7d8693;--artf:#33290f;--arts:#d2a544;--k1:#e0a040;--k2:#9a82dc;--k3:#e07a7a;--k4:#5d6572}}
+
+pre{white-space:pre-wrap;overflow-wrap:anywhere}
+.nb{border:1px solid var(--line);border-left-width:4px;border-radius:6px;padding:8px 14px;margin:12px 0;font-size:14px;background:var(--code)}
+.nb .nbt{font-weight:600;font-size:13px;margin-bottom:4px}
+.nb.look{border-left-color:var(--acc)} .nb.try{border-left-color:var(--ok)} .nb.warn{border-left-color:var(--warn)}
+.nb pre{margin:4px 0;background:transparent;border:none;padding:0}
+.nb ul{margin:2px 0}
+.step-meta{font-size:13px;color:var(--mut);margin:-4px 0 8px}
+.step-meta code{font-size:12px}
+dl.gl dt{font-weight:600;margin-top:8px} dl.gl dd{margin:2px 0 6px 18px}
+</style></head><body><main><h1>MLIR 是怎么把一个模型一步步变成 NPU 指令的</h1>
+<div class="meta">一个完整的真实例子 · PyTorch → torch-mlir → StableHLO → coralnpu-compile（IREE）→ Coral NPU（MPACT 仿真）· 生成于 2026-09-23</div>
+<p>这份文档跟着一个很小的模型，把它从 PyTorch 代码一路编译成 Coral NPU 上的机器指令，并在仿真器上跑出结果。每一步都会告诉你：这一步要解决什么问题、是哪个 pass 做的、IR 在这一步前后长什么样、你应该从中看出什么。</p>
+<p>文中所有 IR 片段都是编译器的真实输出，由生成脚本从产物文件里原样截取，只做了三种处理：省略一部分行（会注明省略了什么）、去掉公共缩进、超长的行在 ins、outs、attrs 等边界处换行，其余由浏览器自动折行。字符一个不删，每段代码在生成时都校验过。不需要任何编译器背景，第 1 节会从“怎么读一行 MLIR”讲起。</p>
+<nav><a href="#s0">0. 例子与结果</a><a href="#s1">1. 先学会读 MLIR</a><a href="#s2">2. pass 与 lowering 是什么</a><a href="#s3">3. 逐步走一遍</a><a href="#s4">4. 回顾：一张表看完全程</a><a href="#s5">5. 自己动手</a><a href="#s6">6. 术语表</a></nav>
+<h2 id="s0">0. 例子与结果</h2>
+<p>例子是 toy ViT 里的 fc1：一个全连接层接一个 gelu 激活。输入 17×32，输出 17×64。之所以选它，是因为它足够小，每一层 IR 都能完整贴出来；又足够真实，矩阵乘、逐元素运算、融合、分块、向量化这些关键环节它都会经过。</p>
+<figure class="code"><div class="cap">lin_gelu.py · 模型的全部代码</div><pre>"""教程用的最小例子：一层 Linear(32→64) 接 gelu，输入 17×32。和 toy ViT 里的 fc1 完全同形状。"""
+import math
+import torch
+import torch.nn as nn
+
+
+class LinGelu(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.fc = nn.Linear(32, 64)
+
+    def forward(self, x):                      # x: [17, 32]
+        h = self.fc(x)                          # [17, 64]
+        return 0.5 * h * (1.0 + torch.tanh(math.sqrt(2.0 / math.pi) * (h + 0.044715 * h ** 3)))</pre></figure>
+<div class="tw"><table><thead><tr><th>项目</th><th>结果</th></tr></thead><tbody><tr><td>编译出的内核</td><td>1 个（<code>main_dispatch_0_matmul_17x64x32_f32</code>），整个模型都在 NPU 上执行</td></tr><tr><td>NPU 仿真输出 vs PyTorch</td><td>1,088 个输出值的最大绝对误差 2.38e-07，判定通过</td></tr><tr><td>编译器运行的 pass</td><td>共 1,334 次执行，其中 483 次真正改动了 IR</td></tr><tr><td>最终产物 <code>model.vmfb</code></td><td>30,911 字节，内含一个 RISC-V ELF 和主机侧调度程序</td></tr></tbody></table></div>
+<h2 id="s1">1. 先学会读 MLIR</h2>
+<p>IR 是 intermediate representation，中间表示。编译器不直接把 Python 变成机器码，而是先把程序写成一种它方便分析和改写的文本格式，改写很多遍，最后再输出机器码。MLIR 就是这样一种格式，它的特点是可以同时容纳许多不同抽象层次的“方言”。</p>
+<h3>1.1 一行 MLIR 的结构</h3>
+<p>下面是从第 3 步产物里摘的一行真实代码，意思是“矩阵乘”：</p>
+<figure class="code"><pre>%4 = torch.aten.mm %arg0, %3 : !torch.vtensor&lt;[17,32],f32&gt;, !torch.vtensor&lt;[32,64],f32&gt; -&gt; !torch.vtensor&lt;[17,64],f32&gt;</pre></figure>
+<div class="tw"><table><thead><tr><th>片段</th><th>叫什么</th><th>含义</th></tr></thead><tbody><tr><td><code>%4</code></td><td>SSA 值</td><td>这一行算出来的结果。每个 %名字 只被赋值一次，之后只读不写，所以编译器看一眼就知道数据从哪来、到哪去。名字本身只是编号，没有含义</td></tr><tr><td><code>=</code></td><td></td><td>左边是结果，右边是运算</td></tr><tr><td><code>torch.aten.mm</code></td><td>操作名（op）</td><td>点号前是方言名 torch，点号后是这个方言里的操作 aten.mm。所有操作都是“方言.操作”的形式</td></tr><tr><td><code>%arg0, %3</code></td><td>操作数</td><td>输入。%arg0 是函数参数，%3 是前面某一行的结果</td></tr><tr><td><code>: … -&gt; …</code></td><td>类型</td><td>冒号后是输入的类型，箭头后是输出的类型。<code>!torch.vtensor&lt;[17,32],f32&gt;</code> 表示 17×32 的 32 位浮点张量</td></tr></tbody></table></div>
+<p>类型写在每一行里，是 MLIR 的一个重要习惯：编译器在任何一步都能立刻知道每个值的形状和数据类型，不需要回头去推。</p>
+<h3>1.2 带“身体”的操作：region 与 block</h3>
+<p>有些操作内部还包着一段代码。最常见的是后面会反复出现的 <code>linalg.generic</code>，下面是第 8 步里的真实片段：</p>
+<figure class="code"><div class="cap">步骤 8 的产物，gelu 融合后的样子。原文第一行很长，这里只加了换行和缩进，字符没有改动</div><pre>%5 = linalg.generic {indexing_maps = [
+      affine_map&lt;(d0, d1) -&gt; (d0, d1)&gt;,
+      affine_map&lt;(d0, d1) -&gt; (d1)&gt;,
+      affine_map&lt;(d0, d1) -&gt; (d0, d1)&gt;],
+    iterator_types = ["parallel", "parallel"]}
+    ins(%4, %__hoisted_tensor_64xf32 : tensor&lt;17x64xf32&gt;, tensor&lt;64xf32&gt;)
+    outs(%2 : tensor&lt;17x64xf32&gt;)
+    attrs = {stream.affinity = #hal.device.affinity&lt;@__device_0&gt;} {
+^bb0(%in: f32, %in_6: f32, %out: f32):
+  %8 = arith.addf %in, %in_6 : f32
+  %9 = math.powf %8, %cst : f32
+  %10 = arith.mulf %9, %cst_3 : f32
+  %11 = arith.addf %8, %10 : f32
+  %12 = arith.mulf %11, %cst_2 : f32
+  %13 = math.tanh %12 : f32
+  %14 = arith.addf %13, %cst_1 : f32
+  %15 = arith.mulf %8, %cst_0 : f32
+  %16 = arith.mulf %15, %14 : f32
+  linalg.yield %16 : f32
+} -&gt; tensor&lt;17x64xf32&gt;</pre></figure>
+<div class="tw"><table><thead><tr><th>片段</th><th>含义</th></tr></thead><tbody><tr><td><code>indexing_maps = [...]</code></td><td>每个输入输出张量怎么随循环变量取元素。下一小节细讲</td></tr><tr><td><code>iterator_types = ["parallel", "parallel"]</code></td><td>有两层循环，两层都是 parallel，也就是各个元素之间互不依赖，可以任意顺序甚至同时计算</td></tr><tr><td><code>ins(%4, %__hoisted_tensor_64xf32 …)</code></td><td>两个输入：矩阵乘的结果、提前算好的偏置</td></tr><tr><td><code>outs(%2 …)</code></td><td>一个输出：结果写进哪个张量</td></tr><tr><td><code>{ ^bb0(%in, %in_6, %out): … }</code></td><td>花括号里是一个 region，region 里是 block，<code>^bb0</code> 是 block 的名字。block 的参数代表“当前这一个元素”</td></tr><tr><td><code>linalg.yield %16</code></td><td>把这一个元素的计算结果交出去，写进输出的对应位置</td></tr></tbody></table></div>
+<p><b>block 的参数怎么和输入对上？按位置。</b>规则是：block 的参数先依次对应 <code>ins</code> 里的每个操作数，再依次对应 <code>outs</code> 里的；<code>indexing_maps</code> 里的 map 也按同样的顺序排。三组列表竖着对齐读：</p>
+<div class="tw"><table><thead><tr><th>位置</th><th>操作数</th><th>它是什么</th><th>indexing_map</th><th>block 参数</th></tr></thead><tbody><tr><td>第 1 个</td><td><code>%4</code>（ins）</td><td>矩阵乘的结果，17×64</td><td><code>(d0, d1) -&gt; (d0, d1)</code></td><td><code>%in</code></td></tr><tr><td>第 2 个</td><td><code>%__hoisted_tensor_64xf32</code>（ins）</td><td>提前算好的偏置，64 个数</td><td><code>(d0, d1) -&gt; (d1)</code></td><td><code>%in_6</code></td></tr><tr><td>第 3 个</td><td><code>%2</code>（outs）</td><td>输出张量，17×64</td><td><code>(d0, d1) -&gt; (d0, d1)</code></td><td><code>%out</code></td></tr></tbody></table></div>
+<p>循环走到第 d0 行、第 d1 列时：<code>%in</code> 是 <code>%4[d0][d1]</code>；<code>%in_6</code> 是偏置的第 d1 个，因为它的 map 只保留了 d1，同一列的 17 行都拿到同一个偏置，这就是广播；<code>%out</code> 对应输出的 <code>[d0][d1]</code>，<code>linalg.yield</code> 把结果写到这里。所以 body 第一行 <code>arith.addf %in, %in_6</code> 就是“这一格的矩阵乘结果加上这一列的偏置”。</p>
+<p><b>d0、d1 是什么？</b>是 <code>linalg.generic</code> 自带的隐形循环的下标，d 是 dimension 的意思。循环有几层，看 <code>iterator_types</code> 有几项，这里两项，所以是 d0、d1；矩阵乘有三项，就多一个 d2。每层走多少次，代码里没写，是编译器从 indexing_map 和张量形状反推的：输出的 map 是 <code>(d0, d1) -&gt; (d0, d1)</code>、形状是 17×64，所以 d0 取 0–16（行号），d1 取 0–63（列号）；偏置的 map <code>(d0, d1) -&gt; (d1)</code> 配上长度 64，也和 d1 的范围吻合。写成普通代码就是：</p>
+<figure class="code"><div class="cap">等价的 Python 写法（示意）</div><pre>for d0 in range(17):          # 第 1 个 iterator：行
+    for d1 in range(64):      # 第 2 个 iterator：列
+        in_  = mm[d0][d1]     # 第 1 个 map (d0, d1) -&gt; (d0, d1)
+        in_6 = bias[d1]       # 第 2 个 map (d0, d1) -&gt; (d1)
+        out[d0][d1] = body(in_, in_6)   # 第 3 个 map；yield 的值写到这里</pre></figure>
+<p>之所以不直接写 for，是因为两层都标了 parallel，各位置互不依赖，循环不写死，编译器才能自由地重新安排。第 13、14 步里，同样这两个维度被切成了“每 16 行、每 8 行、每 8 列”的多层真实循环，那时才出现显式的 <code>scf.forall</code> 和 <code>scf.for</code>，它们的循环变量对应的就是这里的 d0 和 d1。</p>
+<p><b><code>%out</code> 是 <code>%2</code> 吗？</b><code>%2</code> 是整个输出张量，<code>%out</code> 是其中“当前这一格”的那个元素，类型是 f32。再往上看 <code>%2</code> 的来历：</p>
+<figure class="code"><div class="cap">steps/0520 · 同一个函数里的四行</div><pre>%2 = tensor.empty() : tensor&lt;17x64xf32&gt;
+%3 = linalg.fill
+    {stream.affinity = #hal.device.affinity&lt;@__device_0&gt;}
+    ins(%cst_4 : f32)
+    outs(%2 : tensor&lt;17x64xf32&gt;) -&gt; tensor&lt;17x64xf32&gt;
+%4 = linalg.matmul indexing_maps = [affine_map&lt;(d0, d1, d2) -&gt; (d0, d2)&gt;, affine_map&lt;(d0, d1, d2) -&gt; (d1, d2)&gt;, affine_map&lt;(d0, d1, d2) -&gt; (d0, d1)&gt;]
+    {stream.affinity = #hal.device.affinity&lt;@__device_1&gt;}
+    ins(%1, %cst_5 : tensor&lt;17x32xf32&gt;, tensor&lt;64x32xf32&gt;)
+    outs(%3 : tensor&lt;17x64xf32&gt;) -&gt; tensor&lt;17x64xf32&gt;
+%5 = linalg.generic {indexing_maps = [affine_map&lt;(d0, d1) -&gt; (d0, d1)&gt;, affine_map&lt;(d0, d1) -&gt; (d1)&gt;, affine_map&lt;(d0, d1) -&gt; (d0, d1)&gt;],
+    iterator_types = ["parallel", "parallel"]}
+    ins(%4, %__hoisted_tensor_64xf32 : tensor&lt;17x64xf32&gt;, tensor&lt;64xf32&gt;)
+    outs(%2 : tensor&lt;17x64xf32&gt;)
+    attrs = {stream.affinity = #hal.device.affinity&lt;@__device_0&gt;} {</pre></figure>
+<p><code>%2</code> 是 <code>tensor.empty()</code>，只声明“要一块 17×64 的张量”，里面没有有意义的值；gelu 的 body 也从头到尾没有读 <code>%out</code>。这里 outs 的作用只是告诉编译器结果的形状和去处，这种写法叫 destination-passing style。结果也不是把 <code>%2</code> 改掉了，而是产生一个新值 <code>%5</code>：在 tensor 这一层，值是不可变的。要到第 16 步缓冲化之后，这个“去处”才变成一块会被原地写入的真实内存。</p>
+<p>对比同一段里的 <code>linalg.matmul</code>：它的 outs 是 <code>%3</code>，也就是先用 <code>linalg.fill</code> 把 <code>%2</code> 填成 0 的结果。矩阵乘是累加，每一步都在做 out = out + a × b，要读 out 的当前值，所以必须先清零。同样是 outs，在逐元素运算里只是“去处”，在累加运算里还是“初值”。</p>
+<p>名字本身没有含义。<code>%in</code>、<code>%in_6</code>、<code>%out</code> 是打印 IR 时自动起的：来自 ins 的叫 in，来自 outs 的叫 out，重名时加一个编号后缀去重，<code>_6</code> 只是去重用的编号，和“第几个”无关。把它们改名成 %a、%b、%c，意思完全不变，决定对应关系的只有位置。</p>
+<p>所以这段代码的意思是：对 17×64 的每个位置，取矩阵乘结果和偏置，做 body 里那 9 步标量运算，把结果写到输出的同一位置。整个 gelu 就是这 9 步：加偏置、立方、乘 0.044715、相加、乘 0.7979、tanh、加 1、乘 0.5x 的另一半、相乘。</p>
+<h3>1.3 affine_map：循环变量到数组下标的映射</h3>
+<p>看第 7 步里矩阵乘的写法：</p>
+<figure class="code"><pre>%4 = linalg.matmul indexing_maps = [affine_map&lt;(d0, d1, d2) -&gt; (d0, d2)&gt;, affine_map&lt;(d0, d1, d2) -&gt; (d1, d2)&gt;, affine_map&lt;(d0, d1, d2) -&gt; (d0, d1)&gt;]
+    {stream.affinity = #hal.device.affinity&lt;@__device_1&gt;}
+    ins(%1, %cst : tensor&lt;17x32xf32&gt;, tensor&lt;64x32xf32&gt;)
+    outs(%3 : tensor&lt;17x64xf32&gt;) -&gt; tensor&lt;17x64xf32&gt;</pre></figure>
+<p><code>affine_map&lt;(d0, d1, d2) -&gt; (d0, d2)&gt;</code> 可以读成一个小函数：给定三层循环的下标 d0、d1、d2，返回该取数组的哪个位置。三个 map 分别对应两个输入和一个输出：</p>
+<div class="tw"><table><thead><tr><th>map</th><th>对应</th><th>读法</th></tr></thead><tbody><tr><td><code>(d0, d1, d2) -&gt; (d0, d2)</code></td><td>输入 x，17×32</td><td>x[i][k]，i 是行，k 是被求和的那一维</td></tr><tr><td><code>(d0, d1, d2) -&gt; (d1, d2)</code></td><td>输入权重，64×32</td><td>W[j][k]。注意是 W 本身而不是它的转置</td></tr><tr><td><code>(d0, d1, d2) -&gt; (d0, d1)</code></td><td>输出，17×64</td><td>y[i][j]</td></tr></tbody></table></div>
+<p>合起来就是 y[i][j] += x[i][k] × W[j][k]，正是 x 乘以 W 的转置。编译器后面所有的分块、向量化，都是在改写这三层循环。</p>
+<h3>1.4 其他会见到的结构</h3>
+<ul><li><b>module</b>：最外层的容器，一个文件就是一个 module。</li><li><b>func.func / util.func</b>：函数。<code>util.func</code> 是 IREE 自己的函数写法，功能相同。</li><li><b>attribute</b>：花括号里的 <code>{stream.affinity = …}</code> 这类键值对，是贴在操作上的附加信息，不参与计算，但会影响编译器怎么处理它。</li><li><b>#map = …</b>：文件开头的别名定义，后面用 <code>#map</code> 代替很长的 affine_map，纯粹为了少写字。</li></ul>
+<h2 id="s2">2. pass 与 lowering 是什么</h2>
+<p><b>方言</b>是一组操作的集合，每个方言工作在一个抽象层次上。<code>torch</code> 方言说的是 PyTorch 的语言，<code>linalg</code> 说的是循环和张量，<code>vector</code> 说的是向量寄存器，<code>llvm</code> 已经接近机器指令。</p>
+<p><b>pass</b> 是编译器里的一道工序：读入一份 IR，做一件具体的改动，交出一份仍然合法的 IR。下面是一个真实的例子，<code>iree-global-opt-propagate-linalg-transpose</code> 这个 pass 执行前后，矩阵乘那一行的变化：</p>
+<figure class="code"><pre>执行前：
+%5 = linalg.matmul
+    {stream.affinity = #hal.device.affinity&lt;@__device_1&gt;}
+    ins(%0, %2 : tensor&lt;17x32xf32&gt;, tensor&lt;32x64xf32&gt;)
+    outs(%4 : tensor&lt;17x64xf32&gt;) -&gt; tensor&lt;17x64xf32&gt;
+
+执行后：
+%4 = linalg.matmul indexing_maps = [affine_map&lt;(d0, d1, d2) -&gt; (d0, d2)&gt;, affine_map&lt;(d0, d1, d2) -&gt; (d1, d2)&gt;, affine_map&lt;(d0, d1, d2) -&gt; (d0, d1)&gt;]
+    {stream.affinity = #hal.device.affinity&lt;@__device_1&gt;}
+    ins(%1, %cst : tensor&lt;17x32xf32&gt;, tensor&lt;64x32xf32&gt;)
+    outs(%3 : tensor&lt;17x64xf32&gt;) -&gt; tensor&lt;17x64xf32&gt;</pre></figure>
+<p>执行前，矩阵乘读的是一个已经转置好的 32×64 权重，这个转置需要单独算一遍。执行后，矩阵乘直接读原始的 64×32 权重，把“转置”写进了 indexing_maps 里的 <code>(d1, d2)</code>。转置这个操作就此消失，这就是一个 pass 做的全部事情。</p>
+<p><b>lowering</b>，降级，就是一长串这样的 pass 依次执行，每道只把 IR 往下推一小步，最终从 PyTorch 的语义一路推到机器指令。整体路线见图 1。</p>
+<figure class="fig"><svg class="fig" viewBox="0 0 960 518" role="img" aria-label="整条链路的方言阶梯。越往下越接近硬件；flow 这一层把模型切成内核，每个内核再单独走右边这条代码生成路线"><defs><marker id="ah" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah" d="M0 0L8 4L0 8z"/></marker></defs><text x="250.0" y="18" text-anchor="middle" class="b">整个模型：主机侧程序</text><text x="710.0" y="18" text-anchor="middle" class="b">单个内核：代码生成（每个 dispatch 各走一遍）</text><rect x="80" y="30" width="340" height="40" rx="5" class="fe"/><text x="250.0" y="46.0" text-anchor="middle" class="b">PyTorch 模型</text><text x="250.0" y="62.0" text-anchor="middle" class="s m">nn.Module · Python 代码</text><text x="72" y="55" text-anchor="end" class="s">步骤 1</text><rect x="80" y="82" width="340" height="40" rx="5" class="fe"/><text x="250.0" y="98.0" text-anchor="middle" class="b">FX 图</text><text x="250.0" y="114.0" text-anchor="middle" class="s m">aten.* 节点 · torch.export</text><text x="72" y="107" text-anchor="end" class="s">步骤 2</text><line x1="250.0" y1="71" x2="250.0" y2="81" class="ar" marker-end="url(#ah)"/><rect x="80" y="134" width="340" height="40" rx="5" class="fe"/><text x="250.0" y="150.0" text-anchor="middle" class="b">Torch 方言</text><text x="250.0" y="166.0" text-anchor="middle" class="s m">torch.aten.mm …</text><text x="72" y="159" text-anchor="end" class="s">步骤 3</text><line x1="250.0" y1="123" x2="250.0" y2="133" class="ar" marker-end="url(#ah)"/><rect x="80" y="186" width="340" height="40" rx="5" class="art"/><text x="250.0" y="202.0" text-anchor="middle" class="b">StableHLO 方言</text><text x="250.0" y="218.0" text-anchor="middle" class="s m">stablehlo.dot_general …</text><text x="72" y="211" text-anchor="end" class="s">步骤 4</text><line x1="250.0" y1="175" x2="250.0" y2="185" class="ar" marker-end="url(#ah)"/><rect x="80" y="238" width="340" height="40" rx="5" class="bx"/><text x="250.0" y="254.0" text-anchor="middle" class="b">linalg + tensor + arith + math</text><text x="250.0" y="270.0" text-anchor="middle" class="s m">linalg.matmul / generic</text><text x="72" y="263" text-anchor="end" class="s">步骤 5–8</text><line x1="250.0" y1="227" x2="250.0" y2="237" class="ar" marker-end="url(#ah)"/><rect x="80" y="290" width="340" height="40" rx="5" class="bx"/><text x="250.0" y="306.0" text-anchor="middle" class="b">flow 方言</text><text x="250.0" y="322.0" text-anchor="middle" class="s m">flow.dispatch · flow.executable</text><text x="72" y="315" text-anchor="end" class="s">步骤 9</text><line x1="250.0" y1="279" x2="250.0" y2="289" class="ar" marker-end="url(#ah)"/><rect x="80" y="342" width="340" height="40" rx="5" class="bx"/><text x="250.0" y="358.0" text-anchor="middle" class="b">stream 方言</text><text x="250.0" y="374.0" text-anchor="middle" class="s m">缓冲、时间点、提交</text><text x="72" y="367" text-anchor="end" class="s">步骤 10</text><line x1="250.0" y1="331" x2="250.0" y2="341" class="ar" marker-end="url(#ah)"/><rect x="80" y="394" width="340" height="40" rx="5" class="bx"/><text x="250.0" y="410.0" text-anchor="middle" class="b">hal 方言</text><text x="250.0" y="426.0" text-anchor="middle" class="s m">设备、命令缓冲、绑定</text><text x="72" y="419" text-anchor="end" class="s">步骤 11、21</text><line x1="250.0" y1="383" x2="250.0" y2="393" class="ar" marker-end="url(#ah)"/><rect x="80" y="446" width="340" height="40" rx="5" class="art"/><text x="250.0" y="462.0" text-anchor="middle" class="b">vm 方言 → vit.vmfb</text><text x="250.0" y="478.0" text-anchor="middle" class="s m">主机上解释执行的字节码</text><text x="72" y="471" text-anchor="end" class="s">步骤 21</text><line x1="250.0" y1="435" x2="250.0" y2="445" class="ar" marker-end="url(#ah)"/><rect x="540" y="30" width="340" height="40" rx="5" class="bx"/><text x="710.0" y="46.0" text-anchor="middle" class="b">配置好的 linalg</text><text x="710.0" y="62.0" text-anchor="middle" class="s m">lowering_config 分块参数</text><text x="888" y="55" text-anchor="start" class="s">步骤 12</text><rect x="540" y="82" width="340" height="40" rx="5" class="bx"/><text x="710.0" y="98.0" text-anchor="middle" class="b">scf 循环 + tensor 切片</text><text x="710.0" y="114.0" text-anchor="middle" class="s m">scf.forall / scf.for</text><text x="888" y="107" text-anchor="start" class="s">步骤 13–14</text><line x1="710.0" y1="71" x2="710.0" y2="81" class="ar" marker-end="url(#ah)"/><rect x="540" y="134" width="340" height="40" rx="5" class="bx"/><text x="710.0" y="150.0" text-anchor="middle" class="b">vector 方言</text><text x="710.0" y="166.0" text-anchor="middle" class="s m">vector.contract 8×8</text><text x="888" y="159" text-anchor="start" class="s">步骤 15</text><line x1="710.0" y1="123" x2="710.0" y2="133" class="ar" marker-end="url(#ah)"/><rect x="540" y="186" width="340" height="40" rx="5" class="bx"/><text x="710.0" y="202.0" text-anchor="middle" class="b">memref 方言</text><text x="710.0" y="218.0" text-anchor="middle" class="s m">tensor 换成内存缓冲</text><text x="888" y="211" text-anchor="start" class="s">步骤 16</text><line x1="710.0" y1="175" x2="710.0" y2="185" class="ar" marker-end="url(#ah)"/><rect x="540" y="238" width="340" height="40" rx="5" class="bx"/><text x="710.0" y="254.0" text-anchor="middle" class="b">vector.fma + 展开的 math</text><text x="710.0" y="270.0" text-anchor="middle" class="s m">一次 8 个乘加</text><text x="888" y="263" text-anchor="start" class="s">步骤 17–18</text><line x1="710.0" y1="227" x2="710.0" y2="237" class="ar" marker-end="url(#ah)"/><rect x="540" y="290" width="340" height="40" rx="5" class="bx"/><text x="710.0" y="306.0" text-anchor="middle" class="b">llvm 方言</text><text x="710.0" y="322.0" text-anchor="middle" class="s m">llvm.intr.fma …</text><text x="888" y="315" text-anchor="start" class="s">步骤 19</text><line x1="710.0" y1="279" x2="710.0" y2="289" class="ar" marker-end="url(#ah)"/><rect x="540" y="342" width="340" height="40" rx="5" class="bx"/><text x="710.0" y="358.0" text-anchor="middle" class="b">LLVM IR（.ll）</text><text x="710.0" y="374.0" text-anchor="middle" class="s m">@llvm.fma.v8f32</text><text x="888" y="367" text-anchor="start" class="s">步骤 20</text><line x1="710.0" y1="331" x2="710.0" y2="341" class="ar" marker-end="url(#ah)"/><rect x="540" y="394" width="340" height="40" rx="5" class="npu"/><text x="710.0" y="410.0" text-anchor="middle" class="b">RISC-V 汇编与 ELF</text><text x="710.0" y="426.0" text-anchor="middle" class="s m">vfmadd.vf · vfmadd.vv</text><text x="888" y="419" text-anchor="start" class="s">步骤 20</text><line x1="710.0" y1="383" x2="710.0" y2="393" class="ar" marker-end="url(#ah)"/><path d="M 420 310 C 470 310, 490 50, 539 50" class="ar" marker-end="url(#ah)"/><text x="480.0" y="328" text-anchor="middle" class="s">每个 flow.executable</text><path d="M 710.0 434 C 710.0 466, 590.0 466, 421 466" class="ar" marker-end="url(#ah)"/><text x="710.0" y="486" text-anchor="middle" class="s">内核 ELF 被嵌进 vmfb</text></svg><figcaption>图 1 · 整条链路的方言阶梯。越往下越接近硬件；flow 这一层把模型切成内核，每个内核再单独走右边这条代码生成路线</figcaption></figure>
+<p>pass 大致分三类：</p><ul><li><b>转换类</b>：把一种方言换成另一种，例如 StableHLO 换成 linalg、linalg 换成 vector。这是字面意义上的降级。</li><li><b>变换类</b>：方言不变，只改结构，例如融合、分块、缓冲化。</li><li><b>分析与标注类</b>：不改计算，只贴属性，例如决定每个运算放在哪个设备。</li></ul>
+<p>另有两个清理工几乎夹在每道工序之间：<code>canonicalize</code> 负责化简，比如把乘 1 去掉；<code>cse</code> 负责合并重复的计算。一次编译里它们会被调用几百次。</p>
+<p>pass 还有一个“作用对象”：有的作用于整个 module，有的只作用于一个函数，有的只作用于一个内核。编译器的 pass 管理器按层级把它们套起来运行，所以代码生成阶段的 pass 会对每个内核各跑一遍。</p>
+<h2 id="s3">3. 逐步走一遍</h2>
+<p>下面 22 步按执行顺序排列。步骤 1–4 在 torch-mlir 里完成，步骤 5–21 是 <code>coralnpu-compile</code> 一条命令的内部过程，步骤 22 是运行。每一步标题下的灰色小字给出输入、输出与负责的 pass。</p>
+<h4>第一部分 · 前端：从 PyTorch 到 StableHLO</h4>
+<h3 id="st1">步骤 1 · PyTorch 模型</h3><div class="step-meta">输入：Python 代码 &nbsp;→&nbsp; 输出：nn.Module &nbsp;·&nbsp; 负责的 pass：—</div><p>起点就是第 0 节那段 Python 代码。PyTorch 执行时是“边跑边算”的：每行 Python 立刻调用一个算子。这对训练很方便，但编译器拿不到“整个程序长什么样”，没法做全局优化，所以第一件事是把它变成一张静态的图。</p>
+<h3 id="st2">步骤 2 · torch.export：把 Python 变成计算图</h3><div class="step-meta">输入：nn.Module + 示例输入 &nbsp;→&nbsp; 输出：FX 图（ExportedProgram） &nbsp;·&nbsp; 负责的 pass：<code>torch.export.export()</code></div><p>用一个示例输入把 forward 跑一遍，记录下每次调用了哪个底层算子，得到 FX 图。这一步之后，Python 的 if、for、类、方法调用都消失了，只剩一串算子调用。</p>
+<figure class="code"><div class="cap">out/1_fx_graph.txt · 完整内容</div><pre>def forward(self, p_fc_weight, p_fc_bias, x):
+    linear = torch.ops.aten.linear.default(x, p_fc_weight, p_fc_bias);  x = p_fc_weight = p_fc_bias = None
+    mul = torch.ops.aten.mul.Tensor(linear, 0.5)
+    pow_1 = torch.ops.aten.pow.Tensor_Scalar(linear, 3)
+    mul_1 = torch.ops.aten.mul.Tensor(pow_1, 0.044715);  pow_1 = None
+    add = torch.ops.aten.add.Tensor(linear, mul_1);  linear = mul_1 = None
+    mul_2 = torch.ops.aten.mul.Tensor(add, 0.7978845608028654);  add = None
+    tanh = torch.ops.aten.tanh.default(mul_2);  mul_2 = None
+    add_1 = torch.ops.aten.add.Tensor(tanh, 1.0);  tanh = None
+    mul_3 = torch.ops.aten.mul.Tensor(mul, add_1);  mul = add_1 = None
+    return (mul_3,)</pre></figure>
+<div class="nb look"><div class="nbt">看点</div><ul><li>self.fc(x) 变成了一个 <code>aten.linear</code> 节点，权重和偏置变成了函数参数 <code>p_fc_weight</code>、<code>p_fc_bias</code>。</li><li>gelu 公式被逐项拆开，每个 + − × 都是一个节点，常数 <code>0.7978845608028654</code> 就是 √(2/π)。</li><li>每个节点末尾的 <code>x = … = None</code> 是在释放不再用的变量，可以忽略。</li></ul></div>
+<h3 id="st3">步骤 3 · 导入为 Torch 方言</h3><div class="step-meta">输入：FX 图 &nbsp;→&nbsp; 输出：Torch 方言 MLIR &nbsp;·&nbsp; 负责的 pass：<code>fx.export_and_import(…, output_type="torch")</code></div><p>torch-mlir 把 FX 图逐个节点翻译成 MLIR。这是第一次出现 MLIR 格式，操作名、类型都还是 PyTorch 的样子。</p>
+<figure class="code"><div class="cap">out/2_torch.mlir · 完整内容，仅省略末尾的权重数据</div><pre>module {
+  func.func @main(%arg0: !torch.vtensor&lt;[17,32],f32&gt;) -&gt; !torch.vtensor&lt;[17,64],f32&gt; {
+    %float1.000000e00 = torch.constant.float 1.000000e+00
+    %float7.978850e-01 = torch.constant.float 0.79788456080286541
+    %float4.471500e-02 = torch.constant.float 4.471500e-02
+    %int3 = torch.constant.int 3
+    %float5.000000e-01 = torch.constant.float 5.000000e-01
+    %0 = torch.vtensor.literal(dense_resource&lt;torch_tensor_64_torch.float32&gt; : tensor&lt;64xf32&gt;) : !torch.vtensor&lt;[64],f32&gt;
+    %1 = torch.vtensor.literal(dense_resource&lt;torch_tensor_64_32_torch.float32&gt; : tensor&lt;64x32xf32&gt;) : !torch.vtensor&lt;[64,32],f32&gt;
+    %int1 = torch.constant.int 1
+    %int0 = torch.constant.int 0
+    %2 = torch.prim.ListConstruct %int1, %int0 : (!torch.int, !torch.int) -&gt; !torch.list&lt;int&gt;
+    %3 = torch.aten.permute %1, %2 : !torch.vtensor&lt;[64,32],f32&gt;, !torch.list&lt;int&gt; -&gt; !torch.vtensor&lt;[32,64],f32&gt;
+    %4 = torch.aten.mm %arg0, %3 : !torch.vtensor&lt;[17,32],f32&gt;, !torch.vtensor&lt;[32,64],f32&gt; -&gt; !torch.vtensor&lt;[17,64],f32&gt;
+    %5 = torch.aten.mul.Scalar %4, %int1 : !torch.vtensor&lt;[17,64],f32&gt;, !torch.int -&gt; !torch.vtensor&lt;[17,64],f32&gt;
+    %6 = torch.aten.mul.Scalar %0, %int1 : !torch.vtensor&lt;[64],f32&gt;, !torch.int -&gt; !torch.vtensor&lt;[64],f32&gt;
+    %7 = torch.aten.add.Tensor %5, %6, %int1 : !torch.vtensor&lt;[17,64],f32&gt;, !torch.vtensor&lt;[64],f32&gt;, !torch.int -&gt; !torch.vtensor&lt;[17,64],f32&gt;
+    %8 = torch.aten.mul.Scalar %7, %float5.000000e-01 : !torch.vtensor&lt;[17,64],f32&gt;, !torch.float -&gt; !torch.vtensor&lt;[17,64],f32&gt;
+    %9 = torch.aten.pow.Tensor_Scalar %7, %int3 : !torch.vtensor&lt;[17,64],f32&gt;, !torch.int -&gt; !torch.vtensor&lt;[17,64],f32&gt;
+    %10 = torch.aten.mul.Scalar %9, %float4.471500e-02 : !torch.vtensor&lt;[17,64],f32&gt;, !torch.float -&gt; !torch.vtensor&lt;[17,64],f32&gt;
+    %11 = torch.aten.add.Tensor %7, %10, %int1 : !torch.vtensor&lt;[17,64],f32&gt;, !torch.vtensor&lt;[17,64],f32&gt;, !torch.int -&gt; !torch.vtensor&lt;[17,64],f32&gt;
+    %12 = torch.aten.mul.Scalar %11, %float7.978850e-01 : !torch.vtensor&lt;[17,64],f32&gt;, !torch.float -&gt; !torch.vtensor&lt;[17,64],f32&gt;
+    %13 = torch.aten.tanh %12 : !torch.vtensor&lt;[17,64],f32&gt; -&gt; !torch.vtensor&lt;[17,64],f32&gt;
+    %14 = torch.aten.add.Scalar %13, %float1.000000e00, %int1 : !torch.vtensor&lt;[17,64],f32&gt;, !torch.float, !torch.int -&gt; !torch.vtensor&lt;[17,64],f32&gt;
+    %15 = torch.aten.mul.Tensor %8, %14 : !torch.vtensor&lt;[17,64],f32&gt;, !torch.vtensor&lt;[17,64],f32&gt; -&gt; !torch.vtensor&lt;[17,64],f32&gt;
+    return %15 : !torch.vtensor&lt;[17,64],f32&gt;
+  }
+}
+
+{-#  dialect_resources: { … 权重的十六进制数据，此处省略 … }  #-}</pre></figure>
+<div class="nb look"><div class="nbt">看点</div><ul><li><code>aten.linear</code> 被拆成三件事：<code>aten.permute</code> 转置权重、<code>aten.mm</code> 矩阵乘、<code>aten.add.Tensor</code> 加偏置。</li><li>两处 <code>aten.mul.Scalar … %int1</code> 是乘 1。这是分解 linear 时留下的系数，本身没有意义，后面会被消掉或提前算好。</li><li>权重不再是参数，而是 <code>torch.vtensor.literal(dense_resource&lt;…&gt;)</code>：常量本体放在文件末尾的 dialect_resources 里，正文只放一个引用名，这样正文不会被几千个数字淹没。</li></ul></div>
+<h3 id="st4">步骤 4 · 降级为 StableHLO</h3><div class="step-meta">输入：Torch 方言 &nbsp;→&nbsp; 输出：StableHLO MLIR &nbsp;·&nbsp; 负责的 pass：<code>fx.export_and_import(…, output_type="stablehlo")</code></div><p>StableHLO 是一个与框架无关的“交接格式”，JAX、TensorFlow、PyTorch 都能导出它。Coral NPU 的编译器只认 StableHLO 和 TOSA 两种输入，所以必须降到这里。</p>
+<figure class="code"><div class="cap">out/3_stablehlo.mlir · 完整内容</div><pre>module {
+  func.func @main(%arg0: tensor&lt;17x32xf32&gt;) -&gt; tensor&lt;17x64xf32&gt; {
+    %cst = stablehlo.constant dense_resource&lt;torch_tensor_64_torch.float32&gt; : tensor&lt;64xf32&gt;
+    %cst_0 = stablehlo.constant dense_resource&lt;torch_tensor_64_32_torch.float32&gt; : tensor&lt;64x32xf32&gt;
+    %cst_1 = arith.constant dense&lt;1&gt; : tensor&lt;1xi64&gt;
+    %cst_2 = arith.constant dense&lt;5.000000e-01&gt; : tensor&lt;1xf64&gt;
+    %cst_3 = arith.constant dense&lt;3&gt; : tensor&lt;1xi64&gt;
+    %cst_4 = arith.constant dense&lt;4.471500e-02&gt; : tensor&lt;1xf64&gt;
+    %cst_5 = arith.constant dense&lt;0.79788456080286541&gt; : tensor&lt;1xf64&gt;
+    %cst_6 = arith.constant dense&lt;1.000000e+00&gt; : tensor&lt;1xf64&gt;
+    %0 = stablehlo.transpose %cst_0, dims = [1, 0] : (tensor&lt;64x32xf32&gt;) -&gt; tensor&lt;32x64xf32&gt;
+    %1 = stablehlo.dot_general %arg0, %0, contracting_dims = [1] x [0] : (tensor&lt;17x32xf32&gt;, tensor&lt;32x64xf32&gt;) -&gt; tensor&lt;17x64xf32&gt;
+    %2 = stablehlo.convert %cst_1 : (tensor&lt;1xi64&gt;) -&gt; tensor&lt;1xf32&gt;
+    %3 = stablehlo.reshape %2 : (tensor&lt;1xf32&gt;) -&gt; tensor&lt;f32&gt;
+    %4 = stablehlo.broadcast_in_dim %3, dims = [] : (tensor&lt;f32&gt;) -&gt; tensor&lt;17x64xf32&gt;
+    %5 = stablehlo.multiply %1, %4 : tensor&lt;17x64xf32&gt;
+    %6 = stablehlo.broadcast_in_dim %3, dims = [] : (tensor&lt;f32&gt;) -&gt; tensor&lt;64xf32&gt;
+    %7 = stablehlo.multiply %6, %cst : tensor&lt;64xf32&gt;
+    %8 = stablehlo.broadcast_in_dim %7, dims = [1] : (tensor&lt;64xf32&gt;) -&gt; tensor&lt;17x64xf32&gt;
+    %9 = stablehlo.add %5, %8 : tensor&lt;17x64xf32&gt;
+    %10 = stablehlo.convert %cst_2 : (tensor&lt;1xf64&gt;) -&gt; tensor&lt;1xf32&gt;
+    %11 = stablehlo.reshape %10 : (tensor&lt;1xf32&gt;) -&gt; tensor&lt;f32&gt;
+    %12 = stablehlo.broadcast_in_dim %11, dims = [] : (tensor&lt;f32&gt;) -&gt; tensor&lt;17x64xf32&gt;
+    %13 = stablehlo.multiply %9, %12 : tensor&lt;17x64xf32&gt;
+    %14 = stablehlo.convert %cst_3 : (tensor&lt;1xi64&gt;) -&gt; tensor&lt;1xf32&gt;
+    %15 = stablehlo.reshape %14 : (tensor&lt;1xf32&gt;) -&gt; tensor&lt;f32&gt;
+    %16 = stablehlo.broadcast_in_dim %15, dims = [] : (tensor&lt;f32&gt;) -&gt; tensor&lt;17x64xf32&gt;
+    %17 = stablehlo.power %9, %16 : tensor&lt;17x64xf32&gt;
+    %18 = stablehlo.convert %cst_4 : (tensor&lt;1xf64&gt;) -&gt; tensor&lt;1xf32&gt;
+    %19 = stablehlo.reshape %18 : (tensor&lt;1xf32&gt;) -&gt; tensor&lt;f32&gt;
+    %20 = stablehlo.broadcast_in_dim %19, dims = [] : (tensor&lt;f32&gt;) -&gt; tensor&lt;17x64xf32&gt;
+    %21 = stablehlo.multiply %17, %20 : tensor&lt;17x64xf32&gt;
+    %22 = stablehlo.add %9, %21 : tensor&lt;17x64xf32&gt;
+    %23 = stablehlo.convert %cst_5 : (tensor&lt;1xf64&gt;) -&gt; tensor&lt;1xf32&gt;
+    %24 = stablehlo.reshape %23 : (tensor&lt;1xf32&gt;) -&gt; tensor&lt;f32&gt;
+    %25 = stablehlo.broadcast_in_dim %24, dims = [] : (tensor&lt;f32&gt;) -&gt; tensor&lt;17x64xf32&gt;
+    %26 = stablehlo.multiply %22, %25 : tensor&lt;17x64xf32&gt;
+    %27 = stablehlo.tanh %26 : tensor&lt;17x64xf32&gt;
+    %28 = stablehlo.convert %cst_6 : (tensor&lt;1xf64&gt;) -&gt; tensor&lt;1xf32&gt;
+    %29 = stablehlo.reshape %28 : (tensor&lt;1xf32&gt;) -&gt; tensor&lt;f32&gt;
+    %30 = stablehlo.broadcast_in_dim %29, dims = [] : (tensor&lt;f32&gt;) -&gt; tensor&lt;17x64xf32&gt;
+    %31 = stablehlo.add %27, %30 : tensor&lt;17x64xf32&gt;
+    %32 = stablehlo.multiply %13, %31 : tensor&lt;17x64xf32&gt;
+    return %32 : tensor&lt;17x64xf32&gt;
+  }
+}
+
+{-#  dialect_resources: { … 权重的十六进制数据，此处省略 … }  #-}</pre></figure>
+<div class="nb look"><div class="nbt">看点</div><ul><li>类型从 <code>!torch.vtensor&lt;[17,32],f32&gt;</code> 变成标准的 <code>tensor&lt;17x32xf32&gt;</code>。从这一行开始，已经看不出模型来自 PyTorch。</li><li><code>aten.permute</code> → <code>stablehlo.transpose</code>，<code>aten.mm</code> → <code>stablehlo.dot_general</code>，<code>contracting_dims = [1] x [0]</code> 说明对第一个输入的第 1 维和第二个输入的第 0 维求和。</li><li>为什么多出一大堆 <code>convert / reshape / broadcast_in_dim</code>？因为 PyTorch 里的标量常数，比如 0.5，在这里被表示成 1 个元素的 64 位浮点张量，要先转成 32 位、去掉维度、再广播成 17×64，才能和张量逐元素相乘。这些看起来很啰嗦，但后面的 pass 会把它们全部化简掉。</li></ul></div>
+<h4>第二部分 · 编译器前段：整理与优化整个模型</h4>
+<h3 id="st5">步骤 5 · 输入转换：StableHLO → linalg</h3><div class="step-meta">输入：StableHLO &nbsp;→&nbsp; 输出：linalg + tensor + arith + math &nbsp;·&nbsp; 负责的 pass：<code>iree-stablehlo-to-iree-input</code></div><p>编译器的第一件事是把 StableHLO 换成它内部通用的表示：linalg 描述计算的循环结构，tensor 负责张量的分配和变形，arith 与 math 负责标量运算。之后所有优化都在这套表示上进行。</p>
+<figure class="code"><div class="cap">steps/0023 · 从权重转置到第一个乘 1</div><pre>%0 = tensor.empty() : tensor&lt;32x64xf32&gt;
+%1 = linalg.generic {indexing_maps = [#map, #map1],
+    iterator_types = ["parallel", "parallel"]}
+    ins(%cst_6 : tensor&lt;64x32xf32&gt;)
+    outs(%0 : tensor&lt;32x64xf32&gt;) {
+^bb0(%in: f32, %out: f32):
+  linalg.yield %in : f32
+} -&gt; tensor&lt;32x64xf32&gt;
+%2 = tensor.empty() : tensor&lt;17x64xf32&gt;
+%3 = linalg.fill ins(%cst_4 : f32) outs(%2 : tensor&lt;17x64xf32&gt;) -&gt; tensor&lt;17x64xf32&gt;
+%4 = linalg.matmul
+    ins(%arg0, %1 : tensor&lt;17x32xf32&gt;, tensor&lt;32x64xf32&gt;)
+    outs(%3 : tensor&lt;17x64xf32&gt;) -&gt; tensor&lt;17x64xf32&gt;
+%5 = tensor.empty() : tensor&lt;1xf32&gt;
+%6 = linalg.generic {indexing_maps = [#map2], iterator_types = ["parallel"]} outs(%5 : tensor&lt;1xf32&gt;) {
+^bb0(%out: f32):
+  linalg.yield %cst_1 : f32
+} -&gt; tensor&lt;1xf32&gt;
+%collapsed = tensor.collapse_shape %6 [] : tensor&lt;1xf32&gt; into tensor&lt;f32&gt;
+%7 = tensor.empty() : tensor&lt;17x64xf32&gt;
+%8 = linalg.generic {indexing_maps = [#map3, #map1],
+    iterator_types = ["parallel", "parallel"]}
+    ins(%collapsed : tensor&lt;f32&gt;)
+    outs(%7 : tensor&lt;17x64xf32&gt;) {
+^bb0(%in: f32, %out: f32):
+  linalg.yield %in : f32
+} -&gt; tensor&lt;17x64xf32&gt;
+%9 = tensor.empty() : tensor&lt;17x64xf32&gt;
+%10 = linalg.generic {indexing_maps = [#map1, #map1, #map1],
+    iterator_types = ["parallel", "parallel"]}
+    ins(%4, %8 : tensor&lt;17x64xf32&gt;, tensor&lt;17x64xf32&gt;)
+    outs(%9 : tensor&lt;17x64xf32&gt;) {
+  …</pre></figure>
+<div class="nb look"><div class="nbt">看点</div><ul><li>整个模型现在是 28 个 linalg 操作。每个 StableHLO 操作都变成了“先 <code>tensor.empty</code> 分配一块输出，再用一个 linalg 操作填它”的固定套路。</li><li><code>stablehlo.transpose</code> 变成了一个 <code>linalg.generic</code>，它的 body 只有 <code>linalg.yield %in</code>：原样搬运，搬运的方式由 indexing_maps 里的 <code>(d1, d0)</code> 决定，这就是转置。</li><li><code>dot_general</code> 变成了 <code>linalg.fill</code> 清零加 <code>linalg.matmul</code>。矩阵乘是累加运算，输出必须先清零。</li><li>每个 <code>stablehlo.multiply</code> 都变成一个 body 里只有一条 <code>arith.mulf</code> 的 generic。“对每个元素做一次乘法”这件事，被拆成了“循环结构”和“单个元素上的运算”两部分。</li></ul></div>
+<div class="nb try"><div class="nbt">自己动手看这一步</div><pre>coralnpu-compile &lt;目标参数&gt; --compile-to=input model.mlir -o input.mlir</pre></div>
+<h3 id="st6">步骤 6 · 确定设备与函数接口，并分配设备</h3><div class="step-meta">输入：linalg &nbsp;→&nbsp; 输出：带设备标签的 linalg &nbsp;·&nbsp; 负责的 pass：<code>iree-abi-wrap-entry-points</code>、<code>iree-hal-materialize-target-devices</code>、<code>coralnpu-affinity-annotation</code></div><p>编译器要知道有哪些设备、函数怎么被外部调用、每个运算放在哪个设备上。这一步由几个 pass 组成：把入口函数包装成接收 <code>!hal.buffer_view</code> 的形式，从命令行参数生成两个设备，再由 Coral NPU 自己的 pass 给每个 linalg 操作贴上设备标签。</p>
+<figure class="code"><div class="cap">steps/0048 · 设备定义与入口函数</div><pre>#device_target_coralnpu = #hal.device.target&lt;"coralnpu", [#executable_target_embedded_elf_riscv_32]&gt; : !hal.device
+#device_target_local = #hal.device.target&lt;"local", [#executable_target_embedded_elf_x86_64]&gt; : !hal.device
+util.global private @__device_0 = #device_target_local
+util.global private @__device_1 = #device_target_coralnpu
+util.func public @main(%arg0: !hal.buffer_view) -&gt; !hal.buffer_view attributes {iree.abi.stub, iree.reflection = {iree.abi.declaration = "sync func @main(%input0: tensor&lt;17x32xf32&gt;) -&gt; (%output0: tensor&lt;17x64xf32&gt;)"}} {</pre></figure>
+<figure class="code"><div class="cap">steps/0048 · 三个操作被贴上的设备标签</div><pre>%4 = linalg.fill
+    {stream.affinity = #hal.device.affinity&lt;@__device_0&gt;}
+    ins(%cst_1 : f32)
+    outs(%3 : tensor&lt;17x64xf32&gt;) -&gt; tensor&lt;17x64xf32&gt;
+%5 = linalg.matmul
+    {stream.affinity = #hal.device.affinity&lt;@__device_1&gt;}
+    ins(%0, %2 : tensor&lt;17x32xf32&gt;, tensor&lt;32x64xf32&gt;)
+    outs(%4 : tensor&lt;17x64xf32&gt;) -&gt; tensor&lt;17x64xf32&gt;
+%9 = linalg.generic {indexing_maps = [#map1, #map1, #map1],
+    iterator_types = ["parallel", "parallel"]}
+    ins(%5, %8 : tensor&lt;17x64xf32&gt;, tensor&lt;17x64xf32&gt;)
+    outs(%3 : tensor&lt;17x64xf32&gt;)
+    attrs = {stream.affinity = #hal.device.affinity&lt;@__device_0&gt;} {</pre></figure>
+<div class="nb look"><div class="nbt">看点</div><ul><li><code>@__device_0</code> 是主机（local，x86），<code>@__device_1</code> 是 NPU（coralnpu，embedded-elf-riscv_32）。</li><li>矩阵乘标给了 <code>@__device_1</code>，清零和逐元素运算标给了 <code>@__device_0</code>。原因是 NPU 的规则是一张白名单：矩阵乘在里面，<code>linalg.generic</code> 和 <code>linalg.fill</code> 不在里面。</li><li>但这只是初步标签。到第 9 步你会看到，逐元素运算最终会跟着矩阵乘一起去 NPU。</li><li>入口函数现在接收 <code>!hal.buffer_view</code>，也就是运行时传进来的一块带形状信息的内存。外部调用者不认识 MLIR 的 tensor 类型，这里是 MLIR 世界和外部世界的接口。</li></ul></div>
+<h3 id="st7">步骤 7 · 全局优化：吸收转置、提前算好常量</h3><div class="step-meta">输入：带设备标签的 linalg &nbsp;→&nbsp; 输出：更少的 linalg + 预先算好的全局常量 &nbsp;·&nbsp; 负责的 pass：<code>iree-global-opt-propagate-linalg-transpose</code>、<code>iree-util-hoist-into-globals</code>、<code>iree-consteval-jit-globals</code></div><p>在切分内核之前，编译器对整个模型做一些不改变结果、但能减少工作量的改写。这个例子里发生了两件事。</p>
+<p><b>第一件：转置被吸收进矩阵乘。</b>这就是第 2 节那个例子，执行后单独的转置操作消失了。</p>
+<p><b>第二件：常量折叠。</b>偏置乘 1 这件事，输入和输出都是常量，没必要每次推理都算。<code>iree-util-hoist-into-globals</code> 把它挪进一个只在初始化时运行的函数，结果存进全局变量：</p>
+<figure class="code"><div class="cap">steps/0090 · 被提出来的常量计算</div><pre>util.global private @__hoisted_tensor_64xf32
+    {stream.affinity.default = #hal.device.affinity&lt;@__device_0&gt;} : tensor&lt;64xf32&gt;
+util.initializer attributes {stream.affinity.default = #hal.device.affinity&lt;@__device_0&gt;} {
+  %cst = arith.constant dense_resource&lt;torch_tensor_64_torch.float32&gt; : tensor&lt;64xf32&gt;
+  %0 = tensor.empty() : tensor&lt;64xf32&gt;
+  %cst_0 = arith.constant 1.000000e+00 : f32
+  %1 = tensor.empty() : tensor&lt;f32&gt;
+  %2 = linalg.fill ins(%cst_0 : f32) outs(%1 : tensor&lt;f32&gt;) -&gt; tensor&lt;f32&gt;
+  %3 = linalg.generic {indexing_maps = [#map, #map1],
+      iterator_types = ["parallel"]}
+      ins(%2 : tensor&lt;f32&gt;)
+      outs(%0 : tensor&lt;64xf32&gt;)
+      attrs = {stream.affinity = #hal.device.affinity&lt;@__device_0&gt;} {
+  ^bb0(%in: f32, %out: f32):
+    linalg.yield %in : f32
+  } -&gt; tensor&lt;64xf32&gt;
+  %4 = linalg.generic {indexing_maps = [#map1, #map1, #map1],
+      iterator_types = ["parallel"]}
+      ins(%3, %cst : tensor&lt;64xf32&gt;, tensor&lt;64xf32&gt;)
+      outs(%0 : tensor&lt;64xf32&gt;)
+      attrs = {stream.affinity = #hal.device.affinity&lt;@__device_0&gt;} {
+  ^bb0(%in: f32, %in_1: f32, %out: f32):
+    %5 = arith.mulf %in, %in_1 : f32
+    linalg.yield %5 : f32
+  } -&gt; tensor&lt;64xf32&gt;
+  util.global.store %4, @__hoisted_tensor_64xf32 : tensor&lt;64xf32&gt;
+  util.return</pre></figure>
+<p>然后 <code>iree-consteval-jit-globals</code> 做了一件有意思的事：它把这个初始化函数单独编译成一个小程序，在编译期当场运行，把算出的 64 个数直接写回全局变量：</p>
+<figure class="code"><div class="cap">steps/0501 · 执行后，全局变量有了值（数据被打印工具省略为 __elided__）</div><pre>util.global private @__hoisted_tensor_64xf32
+    {stream.affinity.default = #hal.device.affinity&lt;@__device_0&gt;} = dense_resource&lt;__elided__&gt; : tensor&lt;64xf32&gt;</pre></figure>
+<div class="nb look"><div class="nbt">看点</div><ul><li>操作数从第 5 步的 28 个降到 25 个。</li><li>编译器在编译期间又调用了一次完整的编译流程，只为算出这 64 个数。一次编译里 pass 的执行次数中，有一部分就属于这次嵌套编译。</li><li>初始化函数 <code>util.initializer</code> 在模型加载时运行一次，之后每次推理都直接读全局变量。</li></ul></div>
+<h3 id="st8">步骤 8 · 融合：把一串逐元素运算合成一个</h3><div class="step-meta">输入：25 个 linalg 操作 &nbsp;→&nbsp; 输出：3 个 linalg 操作 &nbsp;·&nbsp; 负责的 pass：<code>iree-dispatch-creation-elementwise-op-fusion</code></div><p>现在从矩阵乘到输出之间还有二十多个逐元素的 generic，每个都要完整地读一遍 17×64 的张量、写一遍 17×64 的张量。融合把它们合并成一个 generic，body 里依次做完所有标量运算，中间结果不再落到内存里。</p>
+<figure class="code"><div class="cap">steps/0520 · 融合后的整个 main 函数（省略了常数定义）</div><pre>%0 = hal.tensor.import %arg0 "input0" : !hal.buffer_view -&gt; tensor&lt;17x32xf32&gt;
+%1 = iree_tensor_ext.compute_barrier.start %0 : tensor&lt;17x32xf32&gt; -&gt; tensor&lt;17x32xf32&gt;
+%2 = tensor.empty() : tensor&lt;17x64xf32&gt;
+%3 = linalg.fill
+    {stream.affinity = #hal.device.affinity&lt;@__device_0&gt;}
+    ins(%cst_4 : f32)
+    outs(%2 : tensor&lt;17x64xf32&gt;) -&gt; tensor&lt;17x64xf32&gt;
+%4 = linalg.matmul indexing_maps = [affine_map&lt;(d0, d1, d2) -&gt; (d0, d2)&gt;, affine_map&lt;(d0, d1, d2) -&gt; (d1, d2)&gt;, affine_map&lt;(d0, d1, d2) -&gt; (d0, d1)&gt;]
+    {stream.affinity = #hal.device.affinity&lt;@__device_1&gt;}
+    ins(%1, %cst_5 : tensor&lt;17x32xf32&gt;, tensor&lt;64x32xf32&gt;)
+    outs(%3 : tensor&lt;17x64xf32&gt;) -&gt; tensor&lt;17x64xf32&gt;
+%5 = linalg.generic {indexing_maps = [affine_map&lt;(d0, d1) -&gt; (d0, d1)&gt;, affine_map&lt;(d0, d1) -&gt; (d1)&gt;, affine_map&lt;(d0, d1) -&gt; (d0, d1)&gt;],
+    iterator_types = ["parallel", "parallel"]}
+    ins(%4, %__hoisted_tensor_64xf32 : tensor&lt;17x64xf32&gt;, tensor&lt;64xf32&gt;)
+    outs(%2 : tensor&lt;17x64xf32&gt;)
+    attrs = {stream.affinity = #hal.device.affinity&lt;@__device_0&gt;} {
+^bb0(%in: f32, %in_6: f32, %out: f32):
+  %8 = arith.addf %in, %in_6 : f32
+  %9 = math.powf %8, %cst : f32
+  %10 = arith.mulf %9, %cst_3 : f32
+  %11 = arith.addf %8, %10 : f32
+  %12 = arith.mulf %11, %cst_2 : f32
+  %13 = math.tanh %12 : f32
+  %14 = arith.addf %13, %cst_1 : f32
+  %15 = arith.mulf %8, %cst_0 : f32
+  %16 = arith.mulf %15, %14 : f32
+  linalg.yield %16 : f32
+} -&gt; tensor&lt;17x64xf32&gt;
+%6 = iree_tensor_ext.compute_barrier.end %5 : tensor&lt;17x64xf32&gt; -&gt; tensor&lt;17x64xf32&gt;
+%7 = hal.tensor.export %6 "output0" : tensor&lt;17x64xf32&gt; -&gt; !hal.buffer_view
+util.return %7 : !hal.buffer_view</pre></figure>
+<div class="nb look"><div class="nbt">看点</div><ul><li>只剩 3 个 linalg 操作：清零、矩阵乘、一个融合后的 generic。</li><li>generic 的第二个输入是 <code>%__hoisted_tensor_64xf32</code>，就是第 7 步算好的偏置。它的 indexing_map 是 <code>(d0, d1) -&gt; (d1)</code>：只看列号，同一列的每一行都用同一个偏置，这就是“广播”。</li><li>第 4 步那些 convert、reshape、broadcast 全部消失了，乘 1 也被化简掉了：body 第一行直接是 <code>arith.addf</code>，矩阵乘结果加偏置。</li><li><code>hal.tensor.import</code> 和 <code>hal.tensor.export</code> 分别把外部传入的 buffer_view 转成 tensor、再把结果转回去。</li></ul></div>
+<h4>第三部分 · 切分内核与调度</h4>
+<h3 id="st9">步骤 9 · 形成 dispatch：决定哪些运算打包成一个内核</h3><div class="step-meta">输入：融合后的 linalg &nbsp;→&nbsp; 输出：flow.executable + flow.dispatch 调用 &nbsp;·&nbsp; 负责的 pass：<code>iree-dispatch-creation-form-dispatch-regions</code>、<code>clone-producers-into-dispatch-regions</code>、<code>iree-flow-outline-dispatch-regions</code></div><p>内核就是一段可以被独立下发到某个设备执行的代码。编译器先用 <code>flow.dispatch.region</code> 圈出哪些操作属于同一个内核，再把圈出来的部分剪成独立的函数。</p>
+<figure class="code"><div class="cap">steps/0545 · 圈出的区域</div><pre>%3 = linalg.fill
+    {stream.affinity = #hal.device.affinity&lt;@__device_0&gt;}
+    ins(%cst_4 : f32)
+    outs(%2 : tensor&lt;17x64xf32&gt;) -&gt; tensor&lt;17x64xf32&gt;
+%4 = flow.dispatch.region -&gt; (tensor&lt;17x64xf32&gt;) attributes
+    {stream.affinity = #hal.device.affinity&lt;@__device_1&gt;} {
+  %7 = linalg.matmul indexing_maps = [affine_map&lt;(d0, d1, d2) -&gt; (d0, d2)&gt;, affine_map&lt;(d0, d1, d2) -&gt; (d1, d2)&gt;, affine_map&lt;(d0, d1, d2) -&gt; (d0, d1)&gt;]
+      {stream.affinity = #hal.device.affinity&lt;@__device_1&gt;}
+      ins(%1, %cst_5 : tensor&lt;17x32xf32&gt;, tensor&lt;64x32xf32&gt;)
+      outs(%3 : tensor&lt;17x64xf32&gt;) -&gt; tensor&lt;17x64xf32&gt;
+  %8 = linalg.generic {indexing_maps = [affine_map&lt;(d0, d1) -&gt; (d0, d1)&gt;, affine_map&lt;(d0, d1) -&gt; (d1)&gt;, affine_map&lt;(d0, d1) -&gt; (d0, d1)&gt;],
+      iterator_types = ["parallel", "parallel"]}
+      ins(%7, %__hoisted_tensor_64xf32 : tensor&lt;17x64xf32&gt;, tensor&lt;64xf32&gt;)
+      outs(%2 : tensor&lt;17x64xf32&gt;)
+      attrs = {stream.affinity = #hal.device.affinity&lt;@__device_0&gt;} {
+  ^bb0(%in: f32, %in_6: f32, %out: f32):
+    %9 = arith.addf %in, %in_6 : f32
+    %10 = math.powf %9, %cst : f32
+    %11 = arith.mulf %10, %cst_3 : f32
+    %12 = arith.addf %9, %11 : f32
+    %13 = arith.mulf %12, %cst_2 : f32
+    %14 = math.tanh %13 : f32
+    %15 = arith.addf %14, %cst_1 : f32
+    %16 = arith.mulf %9, %cst_0 : f32
+    %17 = arith.mulf %16, %15 : f32
+    linalg.yield %17 : f32
+  } -&gt; tensor&lt;17x64xf32&gt;
+  flow.return %8 : tensor&lt;17x64xf32&gt;</pre></figure>
+<p>接着清零操作被复制进区域里，再把整个区域剪出去，成为一个独立的 <code>flow.executable</code>。主函数里只剩一次调用：</p>
+<figure class="code"><div class="cap">steps/0574 · 剪出来的内核</div><pre>flow.executable private @main_dispatch_0 {
+  flow.executable.export public @main_dispatch_0 workgroups() -&gt; (index, index, index) {
+    %x, %y, %z = iree_tensor_ext.dispatch.workgroup_count_from_slice()
+    flow.return %x, %y, %z : index, index, index
+  } attributes {stream.affinity = #hal.device.affinity&lt;@__device_1&gt;}
+  builtin.module {
+    func.func @main_dispatch_0(%arg0: !iree_tensor_ext.dispatch.tensor&lt;readonly:tensor&lt;17x32xf32&gt;&gt;, %arg1: !iree_tensor_ext.dispatch.tensor&lt;readonly:tensor&lt;64x32xf32&gt;&gt;, %arg2: !iree_tensor_ext.dispatch.tensor&lt;readonly:tensor&lt;64xf32&gt;&gt;, %arg3: !iree_tensor_ext.dispatch.tensor&lt;writeonly:tensor&lt;17x64xf32&gt;&gt;) {
+      %cst = arith.constant 0.000000e+00 : f32
+      %cst_0 = arith.constant 3.000000e+00 : f32
+      %cst_1 = arith.constant 4.471500e-02 : f32
+      %cst_2 = arith.constant 0.797884523 : f32
+      %cst_3 = arith.constant 1.000000e+00 : f32
+      %cst_4 = arith.constant 5.000000e-01 : f32
+      %0 = iree_tensor_ext.dispatch.tensor.load %arg0, offsets = [0, 0], sizes = [17, 32], strides = [1, 1] : !iree_tensor_ext.dispatch.tensor&lt;readonly:tensor&lt;17x32xf32&gt;&gt; -&gt; tensor&lt;17x32xf32&gt;
+      %1 = iree_tensor_ext.dispatch.tensor.load %arg1, offsets = [0, 0], sizes = [64, 32], strides = [1, 1] : !iree_tensor_ext.dispatch.tensor&lt;readonly:tensor&lt;64x32xf32&gt;&gt; -&gt; tensor&lt;64x32xf32&gt;
+      %2 = iree_tensor_ext.dispatch.tensor.load %arg2, offsets = [0], sizes = [64], strides = [1] : !iree_tensor_ext.dispatch.tensor&lt;readonly:tensor&lt;64xf32&gt;&gt; -&gt; tensor&lt;64xf32&gt;
+      %3 = tensor.empty() : tensor&lt;17x64xf32&gt;
+      %4 = linalg.fill
+          {stream.affinity = #hal.device.affinity&lt;@__device_0&gt;}
+          ins(%cst : f32)
+          outs(%3 : tensor&lt;17x64xf32&gt;) -&gt; tensor&lt;17x64xf32&gt;
+      %5 = linalg.matmul indexing_maps = [#map, #map1, #map2]
+          {stream.affinity = #hal.device.affinity&lt;@__device_1&gt;}
+          ins(%0, %1 : tensor&lt;17x32xf32&gt;, tensor&lt;64x32xf32&gt;)
+          outs(%4 : tensor&lt;17x64xf32&gt;) -&gt; tensor&lt;17x64xf32&gt;
+      %6 = linalg.generic {indexing_maps = [#map3, #map4, #map3],
+          iterator_types = ["parallel", "parallel"]}
+          ins(%5, %2 : tensor&lt;17x64xf32&gt;, tensor&lt;64xf32&gt;)
+          outs(%3 : tensor&lt;17x64xf32&gt;)
+          attrs = {stream.affinity = #hal.device.affinity&lt;@__device_0&gt;} {
+      ^bb0(%in: f32, %in_5: f32, %out: f32):
+        %7 = arith.addf %in, %in_5 : f32
+        %8 = math.powf %7, %cst_0 : f32
+        %9 = arith.mulf %8, %cst_1 : f32
+        %10 = arith.addf %7, %9 : f32
+        %11 = arith.mulf %10, %cst_2 : f32
+        %12 = math.tanh %11 : f32
+        %13 = arith.addf %12, %cst_3 : f32
+        %14 = arith.mulf %7, %cst_4 : f32
+        %15 = arith.mulf %14, %13 : f32
+        linalg.yield %15 : f32
+      } -&gt; tensor&lt;17x64xf32&gt;
+      iree_tensor_ext.dispatch.tensor.store %6, %arg3, offsets = [0, 0], sizes = [17, 64], strides = [1, 1] : tensor&lt;17x64xf32&gt; -&gt; !iree_tensor_ext.dispatch.tensor&lt;writeonly:tensor&lt;17x64xf32&gt;&gt;
+      return</pre></figure>
+<figure class="code"><div class="cap">steps/0574 · 主函数只剩一次 flow.dispatch</div><pre>util.func public @main(%arg0: !hal.buffer_view) -&gt; !hal.buffer_view attributes {iree.abi.stub, iree.reflection = {iree.abi.declaration = "sync func @main(%input0: tensor&lt;17x32xf32&gt;) -&gt; (%output0: tensor&lt;17x64xf32&gt;)"}} {
+  %cst = arith.constant dense_resource&lt;torch_tensor_64_32_torch.float32&gt; : tensor&lt;64x32xf32&gt;
+  %__hoisted_tensor_64xf32 = util.global.load immutable @__hoisted_tensor_64xf32 : tensor&lt;64xf32&gt;
+  %0 = hal.tensor.import %arg0 "input0" : !hal.buffer_view -&gt; tensor&lt;17x32xf32&gt;
+  %1 = flow.dispatch @main_dispatch_0::@main_dispatch_0(%0, %cst, %__hoisted_tensor_64xf32)
+      {stream.affinity = #hal.device.affinity&lt;@__device_1&gt;} : (tensor&lt;17x32xf32&gt;, tensor&lt;64x32xf32&gt;, tensor&lt;64xf32&gt;) -&gt; tensor&lt;17x64xf32&gt;
+  %2 = hal.tensor.export %1 "output0" : tensor&lt;17x64xf32&gt; -&gt; !hal.buffer_view
+  util.return %2 : !hal.buffer_view</pre></figure>
+<div class="nb look"><div class="nbt">看点</div><ul><li>整个区域被标为 <code>@__device_1</code>，也就是 NPU。区域里的 generic 自己的标签是主机，但它被融合进了矩阵乘的区域，于是跟着一起上了 NPU。设备的最终归属由标签、融合、相邻关系共同决定。</li><li>内核的参数类型变成了 <code>!iree_tensor_ext.dispatch.tensor&lt;readonly:…&gt;</code> 和 <code>&lt;writeonly:…&gt;</code>。内核只能通过这四个参数读写外部数据，读写方向是明确声明的。</li><li>内核里第一件事是 <code>dispatch.tensor.load</code> 把参数读成普通 tensor，最后一件事是 <code>dispatch.tensor.store</code> 写回。中间就是第 8 步那三个操作。</li><li>如果模型更大，这里会出现很多个 flow.executable。toy ViT 就有 23 个。</li></ul></div>
+<h3 id="st10">步骤 10 · stream：安排内存和执行顺序</h3><div class="step-meta">输入：flow &nbsp;→&nbsp; 输出：stream &nbsp;·&nbsp; 负责的 pass：<code>iree-stream-conversion</code> 及其后一系列 <code>iree-stream-*</code> pass</div><p>tensor 是抽象的“值”，没有说它放在哪块内存、什么时候算。stream 这一层把它们落实成带大小的内存资源，并安排异步执行的先后顺序。</p>
+<figure class="code"><div class="cap">steps/0726 · 调度完成后的主函数</div><pre>%0 = stream.tensor.import on(#hal.device.affinity&lt;@__device_1&gt;) %arg0 : !hal.buffer_view -&gt; tensor&lt;17x32xf32&gt; in !stream.resource&lt;external&gt;{%c2176}
+%1 = stream.timepoint.join max(%__hoisted_tensor_64xf32__timepoint_0, %__hoisted_tensor_64xf32__timepoint) =&gt; !stream.timepoint
+%c0_1 = arith.constant 0 : index
+%result, %result_timepoint = stream.resource.alloca uninitialized on(#hal.device.affinity&lt;@__device_1&gt;) await(%1) =&gt; !stream.resource&lt;external&gt;{%c4352} =&gt; !stream.timepoint
+%2 = stream.timepoint.join max(%1, %result_timepoint) =&gt; !stream.timepoint
+%3 = stream.cmd.execute on(#hal.device.affinity&lt;@__device_1&gt;) await(%2) =&gt; with(%0 as %arg1: !stream.resource&lt;external&gt;{%c2176}, %__constant_tensor_64x32xf32 as %arg2: !stream.resource&lt;constant&gt;{%c8192}, %__hoisted_tensor_64xf32 as %arg3: !stream.resource&lt;constant&gt;{%c256}, %result as %arg4: !stream.resource&lt;external&gt;{%c4352}) {
+  stream.cmd.dispatch @main_dispatch_0::@main_dispatch_0_matmul_17x64x32_f32 {
+    ro %arg1[%c0 for %c2176] : !stream.resource&lt;external&gt;{%c2176},
+    ro %arg2[%c0 for %c8192] : !stream.resource&lt;constant&gt;{%c8192},
+    ro %arg3[%c0 for %c256] : !stream.resource&lt;constant&gt;{%c256},
+    wo %arg4[%c0_1 for %c4352] : !stream.resource&lt;external&gt;{%c4352}
+  }
+} =&gt; !stream.timepoint
+%4 = stream.timepoint.await %3 =&gt; %result : !stream.resource&lt;external&gt;{%c4352}
+%5 = stream.tensor.export on(#hal.device.affinity&lt;@__device_1&gt;) %4 : tensor&lt;17x64xf32&gt; in !stream.resource&lt;external&gt;{%c4352} -&gt; !hal.buffer_view
+util.return %5 : !hal.buffer_view</pre></figure>
+<div class="nb look"><div class="nbt">看点</div><ul><li>内存大小都已经算好：输入 2176 = 17×32×4 字节，权重 8192 = 64×32×4，偏置 256 = 64×4，输出 4352 = 17×64×4。</li><li>资源分两种：<code>resource&lt;external&gt;</code> 是外部传进来或要交出去的输入输出，<code>resource&lt;constant&gt;</code> 是常量。</li><li><code>stream.cmd.execute on(@__device_1)</code> 表示在 NPU 上执行一批命令，这里只有一条 <code>stream.cmd.dispatch</code>。每个缓冲前的 <code>ro</code> 和 <code>wo</code> 是只读和只写。</li><li><code>timepoint</code> 是时间点，代表“某件异步的事完成了”。<code>await</code> 就是等它完成。执行是异步的，主机下发命令后不会停下来等，除非明确要求。</li></ul></div>
+<h3 id="st11">步骤 11 · hal：确定内核看到的内存接口</h3><div class="step-meta">输入：stream &nbsp;→&nbsp; 输出：hal.executable + 绑定 &nbsp;·&nbsp; 负责的 pass：<code>iree-hal-materialize-interfaces</code></div><p>hal 是硬件抽象层。这一步把 stream 里的资源映射成内核可以访问的“绑定”，并把内核放进一个带目标平台信息的 <code>hal.executable</code> 里。</p>
+<figure class="code"><div class="cap">steps/0877 · 内核的新样子（省略了常数定义）</div><pre>hal.executable private @main_dispatch_0 {
+  hal.executable.variant public @embedded_elf_riscv_32 target(#executable_target_embedded_elf_riscv_32) {
+    hal.executable.export public @main_dispatch_0_matmul_17x64x32_f32 ordinal(0) layout(#pipeline_layout) count(%arg0: !hal.device) -&gt; (index, index, index) {
+      %x, %y, %z = iree_tensor_ext.dispatch.workgroup_count_from_slice()
+      hal.return %x, %y, %z : index, index, index
+    }
+    builtin.module {
+      func.func @main_dispatch_0_matmul_17x64x32_f32() {
+        %0 = hal.interface.binding.subspan layout(#pipeline_layout) binding(0) alignment(64) offset(%c0) flags("ReadOnly|Indirect") : !iree_tensor_ext.dispatch.tensor&lt;readonly:tensor&lt;17x32xf32&gt;&gt;
+        %1 = hal.interface.binding.subspan layout(#pipeline_layout) binding(1) alignment(64) offset(%c256) flags(ReadOnly) : !iree_tensor_ext.dispatch.tensor&lt;readonly:tensor&lt;64x32xf32&gt;&gt;
+        %2 = hal.interface.binding.subspan layout(#pipeline_layout) binding(1) alignment(64) offset(%c0) flags(ReadOnly) : !iree_tensor_ext.dispatch.tensor&lt;readonly:tensor&lt;64xf32&gt;&gt;
+        %3 = hal.interface.binding.subspan layout(#pipeline_layout) binding(2) alignment(64) offset(%c0) flags(Indirect) : !iree_tensor_ext.dispatch.tensor&lt;writeonly:tensor&lt;17x64xf32&gt;&gt;
+        %4 = iree_tensor_ext.dispatch.tensor.load %0, offsets = [0, 0], sizes = [17, 32], strides = [1, 1] : !iree_tensor_ext.dispatch.tensor&lt;readonly:tensor&lt;17x32xf32&gt;&gt; -&gt; tensor&lt;17x32xf32&gt;
+        %5 = iree_tensor_ext.dispatch.tensor.load %1, offsets = [0, 0], sizes = [64, 32], strides = [1, 1] : !iree_tensor_ext.dispatch.tensor&lt;readonly:tensor&lt;64x32xf32&gt;&gt; -&gt; tensor&lt;64x32xf32&gt;
+        %6 = iree_tensor_ext.dispatch.tensor.load %2, offsets = [0], sizes = [64], strides = [1] : !iree_tensor_ext.dispatch.tensor&lt;readonly:tensor&lt;64xf32&gt;&gt; -&gt; tensor&lt;64xf32&gt;
+        %7 = tensor.empty() : tensor&lt;17x64xf32&gt;</pre></figure>
+<figure class="fig"><svg class="fig" viewBox="0 0 920 180" role="img" aria-label="内核看到的三块内存。权重和偏置被打包进同一块常量缓冲，用偏移区分；条宽按字节等比"><defs><marker id="ah" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah" d="M0 0L8 4L0 8z"/></marker></defs><text x="182" y="40" text-anchor="end">binding 0 · 输入 x</text><rect x="196.0" y="20" width="180.3" height="30" rx="3" class="fe"/><text x="286.1515151515151" y="39" text-anchor="middle">17×32 f32 · 2176 B</text><text x="182" y="92" text-anchor="end">binding 1 · 常量</text><rect x="196.0" y="72" width="21.2" height="30" rx="3" class="art"/><text x="223.21212121212122" y="67" text-anchor="start" class="s">偏置 64 · 256 B</text><rect x="217.2" y="72" width="678.8" height="30" rx="3" class="art"/><text x="556.6060606060606" y="91" text-anchor="middle">权重 64×32 f32 · 8192 B</text><text x="196" y="116" text-anchor="start" class="s">偏置在偏移 0 处，权重从偏移 256 开始，合计 8448 字节</text><text x="182" y="144" text-anchor="end">binding 2 · 输出 y</text><rect x="196.0" y="124" width="360.6" height="30" rx="3" class="npu"/><text x="376.30303030303025" y="143" text-anchor="middle">17×64 f32 · 4352 B</text></svg><figcaption>图 2 · 内核看到的三块内存。权重和偏置被打包进同一块常量缓冲，用偏移区分；条宽按字节等比</figcaption></figure>
+<div class="nb look"><div class="nbt">看点</div><ul><li>内核变成了没有参数的函数，数据通过 <code>hal.interface.binding.subspan</code> 从绑定里取。</li><li>偏置和权重共用 <code>binding(1)</code>：偏置在偏移 0，权重在偏移 256。编译器把所有常量打包成一块，减少绑定的数量。</li><li><code>hal.executable.variant @embedded_elf_riscv_32</code> 说明这是给 RISC-V 目标的版本。如果一个内核同时要在主机上跑，还会有一个 x86 的 variant。</li></ul></div>
+<h4>第四部分 · 代码生成：把一个内核变成 NPU 指令</h4>
+<p>从这里开始，只关注这一个内核。前面的 linalg 描述的是“算什么”，接下来要决定“怎么算”：循环怎么切、怎么用上向量寄存器、数据放在哪。</p>
+<h3 id="st12">步骤 12 · 选择分块参数</h3><div class="step-meta">输入：hal.executable &nbsp;→&nbsp; 输出：带 lowering_config 的 linalg &nbsp;·&nbsp; 负责的 pass：<code>coralnpu-tile-size-selection-register</code>、<code>-dtcm</code>、<code>-workgroup</code>、<code>iree-hal-configure-executables</code></div><p>Coral NPU 的编译器用三个 pass，依次按向量寄存器、片上内存 DTCM、工作组三个层次，给矩阵乘贴上分块参数，然后选定代码生成的流水线。</p>
+<div class="tw"><table><thead><tr><th>pass 执行后</th><th>matmul 上的 lowering_config</th></tr></thead><tbody><tr><td><code>…-register</code></td><td><code>vector_common_parallel = [8, 8, 0], vector_reduction = [0, 0, 1]</code></td></tr><tr><td><code>…-dtcm</code></td><td><code>cache_parallel = [16, 0, 0], cache_reduction = [0, 0, 0], vector_common_parallel = [8, 8, 0], vector_reduction = [0, 0, 1]</code></td></tr><tr><td><code>…-workgroup</code></td><td><code>cache_parallel = [16, 0, 0], cache_reduction = [0, 0, 0], distribution = [16, 0, 0], vector_common_parallel = [8, 8, 0], vector_reduction = [0, 0, 1]</code></td></tr></tbody></table></div>
+<p>每个方括号里的三个数，对应矩阵乘的三层循环：第 0 维是输出的行，第 1 维是输出的列，第 2 维是求和的 k。0 表示这一维不切。</p>
+<div class="tw"><table><thead><tr><th>参数</th><th>值</th><th>含义</th></tr></thead><tbody><tr><td><code>vector_common_parallel</code></td><td>[8, 8, 0]</td><td>最内层每次算一个 8 行 × 8 列的小块。NPU 的向量寄存器是 128 位，编译目标里 native_vector_size 是 32 字节，一次能装 8 个 f32</td></tr><tr><td><code>vector_reduction</code></td><td>[0, 0, 1]</td><td>求和维每次走 1 步：每一步用 A 的一列乘 B 的一行，加到 8×8 的累加器上</td></tr><tr><td><code>cache_parallel</code></td><td>[16, 0, 0]</td><td>按片上内存容量再切一层：每次处理 16 行</td></tr><tr><td><code>distribution</code></td><td>[16, 0, 0]</td><td>工作组的划分：每 16 行分给一个工作组。17 行因此分成两个工作组</td></tr></tbody></table></div>
+<p>同时选定的流水线是 <code>CPUDoubleTilingExpert</code>，意思是按“先切大块、再切到向量大小”的两级分块方式生成代码。这是 IREE CPU 后端的现成流水线，Coral NPU 借用了它，只换了分块参数。</p>
+<h3 id="st13">步骤 13 · 按工作组切分</h3><div class="step-meta">输入：带配置的 linalg &nbsp;→&nbsp; 输出：scf.forall 循环 &nbsp;·&nbsp; 负责的 pass：<code>iree-codegen-tile-and-distribute-to-workgroups-using-forall-op</code></div><p>把输出的行按 16 行一组分开，每组是一个可以独立执行的工作组。</p>
+<figure class="code"><div class="cap">steps/0901 · 工作组循环（省略了常数与绑定）</div><pre>%8 = scf.forall (%arg0) = (0) to (17) step (16) shared_outs(%arg1 = %7) -&gt; (tensor&lt;17x64xf32&gt;) {
+  %9 = affine.min affine_map&lt;(d0) -&gt; (-d0 + 17, 16)&gt;(%arg0)
+  %extracted_slice = tensor.extract_slice %4[%arg0, 0] [%9, 32] [1, 1] : tensor&lt;17x32xf32&gt; to tensor&lt;?x32xf32&gt;
+  %10 = tensor.empty(%9) : tensor&lt;?x64xf32&gt;
+  %11 = linalg.fill
+      {stream.affinity = #hal.device.affinity&lt;@__device_0&gt;}
+      ins(%cst : f32)
+      outs(%10 : tensor&lt;?x64xf32&gt;) -&gt; tensor&lt;?x64xf32&gt;
+  %12 = linalg.matmul indexing_maps = [affine_map&lt;(d0, d1, d2) -&gt; (d0, d2)&gt;, affine_map&lt;(d0, d1, d2) -&gt; (d1, d2)&gt;, affine_map&lt;(d0, d1, d2) -&gt; (d0, d1)&gt;]
+      {lowering_config = #iree_cpu.lowering_config&lt;cache_parallel = [16, 0, 0], cache_reduction = [0, 0, 0], distribution = [16, 0, 0], vector_common_parallel = [8, 8, 0], vector_reduction = [0, 0, 1]&gt;, stream.affinity = #hal.device.affinity&lt;@__device_1&gt;}
+      ins(%extracted_slice, %5 : tensor&lt;?x32xf32&gt;, tensor&lt;64x32xf32&gt;)
+      outs(%11 : tensor&lt;?x64xf32&gt;) -&gt; tensor&lt;?x64xf32&gt;
+  %extracted_slice_5 = tensor.extract_slice %arg1[%arg0, 0] [%9, 64] [1, 1] : tensor&lt;17x64xf32&gt; to tensor&lt;?x64xf32&gt;
+  %13 = linalg.generic {indexing_maps = [affine_map&lt;(d0, d1) -&gt; (d0, d1)&gt;, affine_map&lt;(d0, d1) -&gt; (d1)&gt;, affine_map&lt;(d0, d1) -&gt; (d0, d1)&gt;],
+      iterator_types = ["parallel", "parallel"]}
+      ins(%12, %6 : tensor&lt;?x64xf32&gt;, tensor&lt;64xf32&gt;)
+      outs(%extracted_slice_5 : tensor&lt;?x64xf32&gt;)
+      attrs = {stream.affinity = #hal.device.affinity&lt;@__device_0&gt;} {
+  ^bb0(%in: f32, %in_6: f32, %out: f32):
+    %14 = arith.addf %in, %in_6 : f32
+    %15 = math.powf %14, %cst_0 : f32
+    %16 = arith.mulf %15, %cst_1 : f32
+    %17 = arith.addf %14, %16 : f32
+    %18 = arith.mulf %17, %cst_2 : f32
+    %19 = math.tanh %18 : f32
+    %20 = arith.addf %19, %cst_3 : f32
+    %21 = arith.mulf %14, %cst_4 : f32
+    %22 = arith.mulf %21, %20 : f32
+    linalg.yield %22 : f32
+  } -&gt; tensor&lt;?x64xf32&gt;
+  scf.forall.in_parallel {
+    tensor.parallel_insert_slice %13 into %arg1[%arg0, 0] [%9, 64] [1, 1] : tensor&lt;?x64xf32&gt; into tensor&lt;17x64xf32&gt;
+  }
+} {mapping = [#iree_codegen.workgroup_mapping&lt;x&gt;]}</pre></figure>
+<div class="nb look"><div class="nbt">看点</div><ul><li><code>scf.forall (%arg0) = (0) to (17) step (16)</code>：%arg0 取 0 和 16，一共两个工作组。forall 表示各次迭代可以并行。</li><li><code>affine.min (-d0 + 17, 16)</code> 算出这一组实际有几行：第一组 16 行，第二组 17 − 16 = 1 行。于是张量类型里出现了问号 <code>tensor&lt;?x64xf32&gt;</code>，行数不再固定。</li><li><code>tensor.extract_slice</code> 从大张量里切出这一组要用的部分，<code>tensor.parallel_insert_slice</code> 把算好的部分放回去。原来的三个操作被原样搬进了循环体里。</li></ul></div>
+<h3 id="st14">步骤 14 · 继续切到向量大小</h3><div class="step-meta">输入：scf.forall &nbsp;→&nbsp; 输出：五层循环 &nbsp;·&nbsp; 负责的 pass：<code>iree-llvmcpu-tile-and-fuse-producer-consumer</code>（执行 3 次）、<code>iree-codegen-forall-to-for</code></div><p>在每个工作组内部，再按 16 行、8 行、8 列切下去，最内层对求和维 k 逐个循环，形成一个多层循环嵌套。</p>
+<figure class="code"><div class="cap">steps/0930 · 切分后的循环嵌套（省略了 gelu 的 9 行标量运算）</div><pre>%8 = scf.forall (%arg0) = (0) to (17) step (16) shared_outs(%arg1 = %7) -&gt; (tensor&lt;17x64xf32&gt;) {
+  %9 = affine.min affine_map&lt;(d0) -&gt; (-d0 + 17, 16)&gt;(%arg0)
+  %extracted_slice = tensor.extract_slice %arg1[%arg0, 0] [%9, 64] [1, 1] : tensor&lt;17x64xf32&gt; to tensor&lt;?x64xf32&gt;
+  %10 = scf.for %arg2 = %c0_5 to %9 step %c16 iter_args(%arg3 = %extracted_slice) -&gt; (tensor&lt;?x64xf32&gt;) {
+    %11 = affine.min affine_map&lt;(d0)[s0] -&gt; (-d0 + s0, 16)&gt;(%arg2)[%9]
+    %extracted_slice_6 = tensor.extract_slice %arg3[%arg2, 0] [%11, 64] [1, 1] : tensor&lt;?x64xf32&gt; to tensor&lt;?x64xf32&gt;
+    %12 = scf.for %arg4 = %c0_7 to %11 step %c8 iter_args(%arg5 = %extracted_slice_6) -&gt; (tensor&lt;?x64xf32&gt;) {
+      %13 = scf.for %arg6 = %c0_8 to %c64 step %c8_9 iter_args(%arg7 = %arg5) -&gt; (tensor&lt;?x64xf32&gt;) {
+        %14 = affine.min affine_map&lt;(d0)[s0] -&gt; (-d0 + s0, 8)&gt;(%arg4)[%11]
+        %15 = tensor.empty(%14) : tensor&lt;?x8xf32&gt;
+        %16 = linalg.fill
+            {stream.affinity = #hal.device.affinity&lt;@__device_0&gt;}
+            ins(%cst : f32)
+            outs(%15 : tensor&lt;?x8xf32&gt;) -&gt; tensor&lt;?x8xf32&gt;
+        %17 = scf.for %arg8 = %c0 to %c32 step %c1 iter_args(%arg9 = %16) -&gt; (tensor&lt;?x8xf32&gt;) {
+          %19 = affine.apply affine_map&lt;()[s0, s1, s2] -&gt; (s0 + s1 + s2)&gt;()[%arg4, %arg2, %arg0]
+          %extracted_slice_13 = tensor.extract_slice %4[%19, %arg8] [%14, 1] [1, 1] : tensor&lt;17x32xf32&gt; to tensor&lt;?x1xf32&gt;
+          %extracted_slice_14 = tensor.extract_slice %5[%arg6, %arg8] [8, 1] [1, 1] : tensor&lt;64x32xf32&gt; to tensor&lt;8x1xf32&gt;
+          %extracted_slice_15 = tensor.extract_slice %arg9[0, 0] [%14, 8] [1, 1] : tensor&lt;?x8xf32&gt; to tensor&lt;?x8xf32&gt;
+          %20 = linalg.matmul indexing_maps = [affine_map&lt;(d0, d1, d2) -&gt; (d0, d2)&gt;, affine_map&lt;(d0, d1, d2) -&gt; (d1, d2)&gt;, affine_map&lt;(d0, d1, d2) -&gt; (d0, d1)&gt;]
+              {lowering_config = #iree_cpu.lowering_config&lt;cache_parallel = [16, 0, 0], cache_reduction = [0, 0, 0], distribution = [16, 0, 0], vector_common_parallel = [8, 8, 0], vector_reduction = [0, 0, 1]&gt;, stream.affinity = #hal.device.affinity&lt;@__device_1&gt;}
+              ins(%extracted_slice_13, %extracted_slice_14 : tensor&lt;?x1xf32&gt;, tensor&lt;8x1xf32&gt;)
+              outs(%extracted_slice_15 : tensor&lt;?x8xf32&gt;) -&gt; tensor&lt;?x8xf32&gt;
+          %inserted_slice_16 = tensor.insert_slice %20 into %arg9[0, 0] [%14, 8] [1, 1] : tensor&lt;?x8xf32&gt; into tensor&lt;?x8xf32&gt;
+          scf.yield %inserted_slice_16 : tensor&lt;?x8xf32&gt;
+        }
+        %extracted_slice_10 = tensor.extract_slice %6[%arg6] [8] [1] : tensor&lt;64xf32&gt; to tensor&lt;8xf32&gt;
+        %extracted_slice_11 = tensor.extract_slice %arg7[%arg4, %arg6] [%14, 8] [1, 1] : tensor&lt;?x64xf32&gt; to tensor&lt;?x8xf32&gt;
+        %18 = linalg.generic {indexing_maps = [affine_map&lt;(d0, d1) -&gt; (d0, d1)&gt;, affine_map&lt;(d0, d1) -&gt; (d1)&gt;, affine_map&lt;(d0, d1) -&gt; (d0, d1)&gt;],
+            iterator_types = ["parallel", "parallel"]}
+            ins(%17, %extracted_slice_10 : tensor&lt;?x8xf32&gt;, tensor&lt;8xf32&gt;)
+            outs(%extracted_slice_11 : tensor&lt;?x8xf32&gt;)
+            attrs = {stream.affinity = #hal.device.affinity&lt;@__device_0&gt;} {
+        } -&gt; tensor&lt;?x8xf32&gt;
+        %inserted_slice_12 = tensor.insert_slice %18 into %arg7[%arg4, %arg6] [%14, 8] [1, 1] : tensor&lt;?x8xf32&gt; into tensor&lt;?x64xf32&gt;
+        scf.yield %inserted_slice_12 : tensor&lt;?x64xf32&gt;
+      }
+      scf.yield %13 : tensor&lt;?x64xf32&gt;
+    }
+    %inserted_slice = tensor.insert_slice %12 into %arg3[%arg2, 0] [%11, 64] [1, 1] : tensor&lt;?x64xf32&gt; into tensor&lt;?x64xf32&gt;
+    scf.yield %inserted_slice : tensor&lt;?x64xf32&gt;
+  }
+  scf.forall.in_parallel {
+    tensor.parallel_insert_slice %10 into %arg1[%arg0, 0] [%9, 64] [1, 1] : tensor&lt;?x64xf32&gt; into tensor&lt;17x64xf32&gt;
+  }
+} {mapping = [#iree_codegen.workgroup_mapping&lt;x&gt;]}</pre></figure>
+<figure class="fig"><svg class="fig" viewBox="0 0 920 292" role="img" aria-label="fc1 的输出如何被切块：先按 16 行分给工作组，再切成 8×8 的向量块；每个块由 32 次“列乘行”的外积累加得到"><defs><marker id="ah" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah" d="M0 0L8 4L0 8z"/></marker></defs><text x="284.0" y="22" text-anchor="middle" class="b">输出 C：17 行 × 64 列</text><rect x="60" y="40" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="116" y="40" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="172" y="40" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="228" y="40" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="284" y="40" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="340" y="40" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="396" y="40" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="452" y="40" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="60" y="51" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="116" y="51" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="172" y="51" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="228" y="51" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="284" y="51" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="340" y="51" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="396" y="51" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="452" y="51" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="60" y="62" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="116" y="62" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="172" y="62" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="228" y="62" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="284" y="62" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="340" y="62" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="396" y="62" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="452" y="62" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="60" y="73" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="116" y="73" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="172" y="73" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="228" y="73" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="284" y="73" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="340" y="73" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="396" y="73" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="452" y="73" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="60" y="84" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="116" y="84" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="172" y="84" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="228" y="84" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="284" y="84" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="340" y="84" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="396" y="84" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="452" y="84" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="60" y="95" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="116" y="95" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="172" y="95" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="228" y="95" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="284" y="95" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="340" y="95" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="396" y="95" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="452" y="95" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="60" y="106" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="116" y="106" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="172" y="106" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="228" y="106" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="284" y="106" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="340" y="106" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="396" y="106" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="452" y="106" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="60" y="117" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="116" y="117" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="172" y="117" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="228" y="117" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="284" y="117" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="340" y="117" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="396" y="117" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="452" y="117" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="60" y="128" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="116" y="128" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="172" y="128" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="228" y="128" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="284" y="128" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="340" y="128" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="396" y="128" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="452" y="128" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="60" y="139" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="116" y="139" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="172" y="139" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="228" y="139" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="284" y="139" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="340" y="139" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="396" y="139" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="452" y="139" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="60" y="150" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="116" y="150" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="172" y="150" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="228" y="150" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="284" y="150" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="340" y="150" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="396" y="150" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="452" y="150" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="60" y="161" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="116" y="161" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="172" y="161" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="228" y="161" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="284" y="161" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="340" y="161" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="396" y="161" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="452" y="161" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="60" y="172" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="116" y="172" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="172" y="172" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="228" y="172" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="284" y="172" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="340" y="172" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="396" y="172" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="452" y="172" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="60" y="183" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="116" y="183" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="172" y="183" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="228" y="183" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="284" y="183" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="340" y="183" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="396" y="183" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="452" y="183" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="60" y="194" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="116" y="194" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="172" y="194" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="228" y="194" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="284" y="194" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="340" y="194" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="396" y="194" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="452" y="194" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="60" y="205" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="116" y="205" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="172" y="205" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="228" y="205" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="284" y="205" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="340" y="205" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="396" y="205" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="452" y="205" width="56" height="11" class="npu" style="stroke-width:0.4"/><rect x="60" y="216" width="56" height="11" class="art" style="stroke-width:0.4"/><rect x="116" y="216" width="56" height="11" class="art" style="stroke-width:0.4"/><rect x="172" y="216" width="56" height="11" class="art" style="stroke-width:0.4"/><rect x="228" y="216" width="56" height="11" class="art" style="stroke-width:0.4"/><rect x="284" y="216" width="56" height="11" class="art" style="stroke-width:0.4"/><rect x="340" y="216" width="56" height="11" class="art" style="stroke-width:0.4"/><rect x="396" y="216" width="56" height="11" class="art" style="stroke-width:0.4"/><rect x="452" y="216" width="56" height="11" class="art" style="stroke-width:0.4"/><line x1="54" y1="128" x2="514" y2="128" style="stroke:var(--fg);stroke-width:1.2"/><line x1="54" y1="216" x2="514" y2="216" style="stroke:var(--fg);stroke-width:2"/><line x1="60" y1="36" x2="60" y2="231" style="stroke:var(--fg);stroke-width:1"/><line x1="116" y1="36" x2="116" y2="231" style="stroke:var(--fg);stroke-width:1"/><line x1="172" y1="36" x2="172" y2="231" style="stroke:var(--fg);stroke-width:1"/><line x1="228" y1="36" x2="228" y2="231" style="stroke:var(--fg);stroke-width:1"/><line x1="284" y1="36" x2="284" y2="231" style="stroke:var(--fg);stroke-width:1"/><line x1="340" y1="36" x2="340" y2="231" style="stroke:var(--fg);stroke-width:1"/><line x1="396" y1="36" x2="396" y2="231" style="stroke:var(--fg);stroke-width:1"/><line x1="452" y1="36" x2="452" y2="231" style="stroke:var(--fg);stroke-width:1"/><line x1="508" y1="36" x2="508" y2="231" style="stroke:var(--fg);stroke-width:1"/><text x="52" y="88.0" text-anchor="end" class="s">行 0–7</text><text x="52" y="176" text-anchor="end" class="s">行 8–15</text><text x="52" y="225" text-anchor="end" class="s">行 16</text><text x="520" y="132" text-anchor="start" class="s">工作组 0：行 0–15</text><text x="520" y="225" text-anchor="start" class="s">工作组 1：只有行 16</text><text x="88" y="245" text-anchor="middle" class="s">8 列</text><text x="60" y="263" text-anchor="start" class="s">粗横线：工作组边界，每 16 行一组。细线：8×8 的向量块。</text><text x="60" y="279" text-anchor="start" class="s">黄色那一行凑不满 8 行，靠掩码只写这 1 行。</text><text x="760" y="22" text-anchor="middle" class="b">一个 8×8 块怎么算出来</text><rect x="640" y="44" width="60" height="110" rx="5" class="fe"/><text x="670.0" y="95.0" text-anchor="middle" class="b">A 列</text><text x="670.0" y="111.0" text-anchor="middle" class="s">8 个数</text><text x="670" y="170" text-anchor="middle" class="s m">A[行块, k]</text><rect x="720" y="44" width="150" height="34" rx="5" class="fe"/><text x="795.0" y="65.0" text-anchor="middle" class="b">B 行 · 8 个数</text><text x="795" y="92" text-anchor="middle" class="s m">B[列块, k]</text><rect x="720" y="100" width="150" height="54" rx="5" class="npu"/><text x="795.0" y="123.0" text-anchor="middle" class="b">累加器 8×8</text><text x="795.0" y="139.0" text-anchor="middle" class="s">+= A 列 ⊗ B 行</text><text x="760" y="190" text-anchor="middle" class="s">对 k = 0 … 31 重复 32 次</text><text x="760" y="206" text-anchor="middle" class="s">每次 = 8 条 8 路 fma</text></svg><figcaption>图 3 · fc1 的输出如何被切块：先按 16 行分给工作组，再切成 8×8 的向量块；每个块由 32 次“列乘行”的外积累加得到</figcaption></figure>
+<div class="nb look"><div class="nbt">看点</div><ul><li>从外到内五层：工作组（每 16 行）、缓存块（每 16 行）、行块（每 8 行）、列块（每 8 列）、求和（k 从 0 到 31，每次 1）。</li><li>最内层的矩阵乘现在只处理 <code>tensor&lt;?x1xf32&gt;</code> 乘 <code>tensor&lt;8x1xf32&gt;</code>：A 的一小列乘 B 的一小行，加到 8×8 的块上。</li><li>gelu 那个 generic 没有进入 k 循环，而是紧跟在它后面，对算完的 8×8 块做一次。这叫“融合到消费者”：每个块算完立刻做激活，不必等整个矩阵乘结束。</li><li>为什么行块是 8，缓存块也是 16？因为这个例子太小，一共才 17 行，两层 16 的切分都只切出一块。模型更大时这几层才会拉开差距。</li></ul></div>
+<h3 id="st15">步骤 15 · 向量化</h3><div class="step-meta">输入：scf 循环里的 linalg &nbsp;→&nbsp; 输出：vector 方言 &nbsp;·&nbsp; 负责的 pass：<code>iree-codegen-generic-vectorization</code></div><p>把最内层的小块运算换成向量操作。从这里开始，一次操作处理的不再是一个数，而是一整排 8 个数。</p>
+<figure class="code"><div class="cap">steps/0933 · k 循环与 gelu 部分</div><pre>%19 = scf.for %arg8 = %c0 to %c32 step %c1 iter_args(%arg9 = %18) -&gt; (tensor&lt;?x8xf32&gt;) {
+  %34 = affine.apply affine_map&lt;()[s0, s1, s2] -&gt; (s0 + s1 + s2)&gt;()[%arg4, %arg2, %arg0]
+  %extracted_slice_9 = tensor.extract_slice %5[%34, %arg8] [%15, 1] [1, 1] : tensor&lt;17x32xf32&gt; to tensor&lt;?x1xf32&gt;
+  %extracted_slice_10 = tensor.extract_slice %6[%arg6, %arg8] [8, 1] [1, 1] : tensor&lt;64x32xf32&gt; to tensor&lt;8x1xf32&gt;
+  %extracted_slice_11 = tensor.extract_slice %arg9[0, 0] [%15, 8] [1, 1] : tensor&lt;?x8xf32&gt; to tensor&lt;?x8xf32&gt;
+  %35 = vector.create_mask %15, %c1 : vector&lt;8x1xi1&gt;
+  %36 = vector.transfer_read %extracted_slice_9[%c0, %c0], %0, %35 {in_bounds = [true, true]} : tensor&lt;?x1xf32&gt;, vector&lt;8x1xf32&gt;
+  %37 = vector.transfer_read %extracted_slice_10[%c0, %c0], %0 {in_bounds = [true, true]} : tensor&lt;8x1xf32&gt;, vector&lt;8x1xf32&gt;
+  %38 = vector.create_mask %15, %c8 : vector&lt;8x8xi1&gt;
+  %39 = vector.transfer_read %extracted_slice_11[%c0, %c0], %0, %38 {in_bounds = [true, true]} : tensor&lt;?x8xf32&gt;, vector&lt;8x8xf32&gt;
+  %40 = vector.create_mask %15, %c8, %c1 : vector&lt;8x8x1xi1&gt;
+  %41 = vector.mask %40 { vector.contract {indexing_maps = [affine_map&lt;(d0, d1, d2) -&gt; (d0, d2)&gt;, affine_map&lt;(d0, d1, d2) -&gt; (d1, d2)&gt;, affine_map&lt;(d0, d1, d2) -&gt; (d0, d1)&gt;],
+      iterator_types = ["parallel", "parallel", "reduction"], kind = #vector.kind&lt;add&gt;} %36, %37, %39 : vector&lt;8x1xf32&gt;, vector&lt;8x1xf32&gt; into vector&lt;8x8xf32&gt; } : vector&lt;8x8x1xi1&gt; -&gt; vector&lt;8x8xf32&gt;
+  %42 = vector.transfer_write %41, %extracted_slice_11[%c0, %c0], %38 {in_bounds = [true, true]} : vector&lt;8x8xf32&gt;, tensor&lt;?x8xf32&gt;
+  %inserted_slice_12 = tensor.insert_slice %42 into %arg9[0, 0] [%15, 8] [1, 1] : tensor&lt;?x8xf32&gt; into tensor&lt;?x8xf32&gt;
+  scf.yield %inserted_slice_12 : tensor&lt;?x8xf32&gt;
+}
+%extracted_slice_6 = tensor.extract_slice %7[%arg6] [8] [1] : tensor&lt;64xf32&gt; to tensor&lt;8xf32&gt;
+%extracted_slice_7 = tensor.extract_slice %arg7[%arg4, %arg6] [%15, 8] [1, 1] : tensor&lt;?x64xf32&gt; to tensor&lt;?x8xf32&gt;
+%dim = tensor.dim %19, %c0 : tensor&lt;?x8xf32&gt;
+%20 = vector.create_mask %dim, %c8 : vector&lt;8x8xi1&gt;
+%21 = vector.transfer_read %19[%c0, %c0], %0, %20 {in_bounds = [true, true]} : tensor&lt;?x8xf32&gt;, vector&lt;8x8xf32&gt;
+%22 = vector.transfer_read %extracted_slice_6[%c0], %0 {in_bounds = [true]} : tensor&lt;8xf32&gt;, vector&lt;8xf32&gt;
+%23 = vector.broadcast %22 : vector&lt;8xf32&gt; to vector&lt;8x8xf32&gt;
+%24 = arith.addf %21, %23 : vector&lt;8x8xf32&gt;
+%25 = math.powf %24, %cst_3 : vector&lt;8x8xf32&gt;
+%26 = arith.mulf %25, %cst_2 : vector&lt;8x8xf32&gt;
+%27 = arith.addf %24, %26 : vector&lt;8x8xf32&gt;
+%28 = arith.mulf %27, %cst_1 : vector&lt;8x8xf32&gt;
+%29 = math.tanh %28 : vector&lt;8x8xf32&gt;
+%30 = arith.addf %29, %cst_0 : vector&lt;8x8xf32&gt;
+%31 = arith.mulf %24, %cst : vector&lt;8x8xf32&gt;
+%32 = arith.mulf %31, %30 : vector&lt;8x8xf32&gt;
+%33 = vector.transfer_write %32, %extracted_slice_7[%c0, %c0], %20 {in_bounds = [true, true]} : vector&lt;8x8xf32&gt;, tensor&lt;?x8xf32&gt;</pre></figure>
+<div class="nb look"><div class="nbt">看点</div><ul><li><code>vector.transfer_read</code> 把一块内存读进一个向量值，比如 <code>vector&lt;8x8xf32&gt;</code>；<code>vector.transfer_write</code> 写回去。</li><li><code>vector.contract</code> 是向量化后的矩阵乘，它的 indexing_maps 和第 1.3 节里的一模一样，只是操作对象从张量变成了 8×8 的向量。</li><li><code>vector.create_mask</code> 生成掩码。最后一组只有 1 行，读写时只处理掩码为真的那一行，其余 7 行不碰，这就是图 3 里黄色那一行的处理方式。</li><li>gelu 的 9 步运算原封不动地变成了对 <code>vector&lt;8x8xf32&gt;</code> 的运算，比如 <code>math.tanh %28 : vector&lt;8x8xf32&gt;</code>。</li></ul></div>
+<h3 id="st16">步骤 16 · 缓冲化：张量变成内存</h3><div class="step-meta">输入：vector + tensor &nbsp;→&nbsp; 输出：vector + memref &nbsp;·&nbsp; 负责的 pass：<code>iree-codegen-iree-comprehensive-bufferize</code></div><p>到目前为止，tensor 都是“值”：每次修改都在概念上产生一个新张量，没有说数据存在哪。缓冲化把 tensor 换成 memref，也就是一块具体的内存，修改就是原地写入。</p>
+<figure class="code"><div class="cap">steps/0940 · 函数开头（省略了常数与绑定）</div><pre>func.func @main_dispatch_0_matmul_17x64x32_f32() attributes {translation_info = #iree_codegen.translation_info&lt;pipeline = CPUDoubleTilingExpert&gt;} {
+  %0 = ub.poison : f32
+  %alloca = memref.alloca() {alignment = 64 : i64} : memref&lt;8x8xf32&gt;
+  %alloca_5 = memref.alloca() {alignment = 64 : i64} : memref&lt;8x8xf32&gt;
+  %alloca_6 = memref.alloca() {alignment = 64 : i64} : memref&lt;8x8xf32&gt;
+  scf.forall (%arg0) = (0) to (17) step (16) {
+    %5 = affine.min affine_map&lt;(d0) -&gt; (-d0 + 17, 16)&gt;(%arg0)
+    %subview = memref.subview %4[%arg0, 0] [%5, 64] [1, 1] : memref&lt;17x64xf32, #hal.descriptor_type&lt;storage_buffer&gt;&gt; to memref&lt;?x64xf32, strided&lt;[64, 1], offset: ?&gt;, #hal.descriptor_type&lt;storage_buffer&gt;&gt;
+    %6 = scf.for %arg1 = %c0 to %5 step %c16 iter_args(%arg2 = %subview) -&gt; (memref&lt;?x64xf32, strided&lt;[64, 1], offset: ?&gt;, #hal.descriptor_type&lt;storage_buffer&gt;&gt;) {
+      %7 = affine.min affine_map&lt;(d0)[s0] -&gt; (-d0 + s0, 16)&gt;(%arg1)[%5]
+      %subview_8 = memref.subview %arg2[%arg1, 0] [%7, 64] [1, 1] : memref&lt;?x64xf32, strided&lt;[64, 1], offset: ?&gt;, #hal.descriptor_type&lt;storage_buffer&gt;&gt; to memref&lt;?x64xf32, strided&lt;[64, 1], offset: ?&gt;, #hal.descriptor_type&lt;storage_buffer&gt;&gt;
+      %8 = scf.for %arg3 = %c0 to %7 step %c8 iter_args(%arg4 = %subview_8) -&gt; (memref&lt;?x64xf32, strided&lt;[64, 1], offset: ?&gt;, #hal.descriptor_type&lt;storage_buffer&gt;&gt;) {</pre></figure>
+<div class="nb look"><div class="nbt">看点</div><ul><li>出现了三块 <code>memref.alloca() : memref&lt;8x8xf32&gt;</code>：在栈上开的 8×8 临时空间，用来放累加器等中间结果。</li><li><code>memref.subview</code> 是在已有内存上开一个“窗口”，只是换个视角看同一块内存，不复制数据。它取代了之前的 <code>tensor.extract_slice</code>。</li><li>类型里的 <code>strided&lt;[64, 1], offset: ?&gt;</code> 描述内存布局：行与行相隔 64 个元素，同一行相邻元素相隔 1 个。</li><li>循环不再需要把张量作为结果传出来，因为数据是原地写进输出缓冲的。</li></ul></div>
+<h3 id="st17">步骤 17 · 把向量运算拆成硬件能执行的形状</h3><div class="step-meta">输入：二维 vector &nbsp;→&nbsp; 输出：一维 vector.fma &nbsp;·&nbsp; 负责的 pass：<code>iree-llvmcpu-virtual-vector-lowering</code>、<code>iree-codegen-vector-transfer-lowering</code></div><p>硬件的向量寄存器只能装一维的一排数，没有 8×8 这种二维向量。这一步把二维的 <code>vector.contract</code> 拆成 8 条一维的 <code>vector.fma</code>，每条处理累加器的一行。</p>
+<figure class="code"><div class="cap">steps/0950 · k 循环的开头 24 行</div><pre>%13 = scf.for %arg3 = %c0 to %c32 step %c1 iter_args(%arg4 = %12) -&gt; (vector&lt;8x8xf32&gt;) {
+  %subview_15 = memref.subview %assume_align[%10, %arg3] [%8, 1] [1, 1] : memref&lt;17x32xf32, #hal.descriptor_type&lt;storage_buffer&gt;&gt; to memref&lt;?x1xf32, strided&lt;[32, 1], offset: ?&gt;, #hal.descriptor_type&lt;storage_buffer&gt;&gt;
+  %26 = vector.create_mask %8 : vector&lt;8xi1&gt;
+  %subview_16 = memref.subview %subview_15[0, 0] [%8, 1] [1, 1] : memref&lt;?x1xf32, strided&lt;[32, 1], offset: ?&gt;, #hal.descriptor_type&lt;storage_buffer&gt;&gt; to memref&lt;?xf32, affine_map&lt;(d0)[s0] -&gt; (d0 * 32 + s0)&gt;, #hal.descriptor_type&lt;storage_buffer&gt;&gt;
+  %27 = vector.transfer_read %subview_16[%c0], %0, %26 {in_bounds = [true]} : memref&lt;?xf32, affine_map&lt;(d0)[s0] -&gt; (d0 * 32 + s0)&gt;, #hal.descriptor_type&lt;storage_buffer&gt;&gt;, vector&lt;8xf32&gt;
+  %28 = vector.transfer_read %assume_align_7[%arg2, %arg3], %0 {in_bounds = [true, true]} : memref&lt;64x32xf32, strided&lt;[32, 1], offset: ?&gt;, #hal.descriptor_type&lt;storage_buffer&gt;&gt;, vector&lt;8x1xf32&gt;
+  %29 = vector.transpose %28, [1, 0] : vector&lt;8x1xf32&gt; to vector&lt;1x8xf32&gt;
+  %30 = vector.transpose %11, [2, 0, 1] : vector&lt;8x8x1xi1&gt; to vector&lt;1x8x8xi1&gt;
+  %31 = vector.extract %29[0] : vector&lt;8xf32&gt; from vector&lt;1x8xf32&gt;
+  %32 = vector.extract %27[0] : f32 from vector&lt;8xf32&gt;
+  %33 = vector.broadcast %32 : f32 to vector&lt;8xf32&gt;
+  %34 = vector.extract %arg4[0] : vector&lt;8xf32&gt; from vector&lt;8x8xf32&gt;
+  %35 = vector.extract %30[0, 0] : vector&lt;8xi1&gt; from vector&lt;1x8x8xi1&gt;
+  %36 = vector.fma %33, %31, %34 : vector&lt;8xf32&gt;
+  %37 = arith.select %35, %36, %34 : vector&lt;8xi1&gt;, vector&lt;8xf32&gt;
+  %38 = vector.insert %37, %cst [0] : vector&lt;8xf32&gt; into vector&lt;8x8xf32&gt;
+  %39 = vector.extract %27[1] : f32 from vector&lt;8xf32&gt;
+  %40 = vector.broadcast %39 : f32 to vector&lt;8xf32&gt;
+  %41 = vector.extract %arg4[1] : vector&lt;8xf32&gt; from vector&lt;8x8xf32&gt;
+  %42 = vector.extract %30[0, 1] : vector&lt;8xi1&gt; from vector&lt;1x8x8xi1&gt;
+  %43 = vector.fma %40, %31, %41 : vector&lt;8xf32&gt;
+  %44 = arith.select %42, %43, %41 : vector&lt;8xi1&gt;, vector&lt;8xf32&gt;
+  %45 = vector.insert %44, %38 [1] : vector&lt;8xf32&gt; into vector&lt;8x8xf32&gt;
+  %46 = vector.extract %27[2] : f32 from vector&lt;8xf32&gt;</pre></figure>
+<div class="nb look"><div class="nbt">看点</div><ul><li>每一步 k：先读出 A 的一列 8 个数 %27、B 的一行 8 个数 %31。</li><li>然后对累加器的第 0 行：取出 A 列的第 0 个数，<code>vector.broadcast</code> 复制成 8 份，做 <code>vector.fma %33, %31, %34</code>，即 累加器第 0 行 += A[0] × B 行。第 1 行用 A[1]，依此类推，一共 8 条 fma。</li><li>fma 是 fused multiply-add，融合乘加：一条指令同时完成 a×b+c，比分开做乘和加更快也更精确。</li><li><code>arith.select</code> 配合掩码：对超出范围的行保留原值，不写入新结果。</li></ul></div>
+<h3 id="st18">步骤 18 · 展开数学函数</h3><div class="step-meta">输入：含 math.tanh 1 处、math.powf 1 处 &nbsp;→&nbsp; 输出：含 math.tanh 0 处、math.powf 0 处 &nbsp;·&nbsp; 负责的 pass：<code>iree-codegen-math-transform</code></div><p>硬件没有 tanh 这样的指令，也没有通用的幂运算指令。这一步用加减乘除把它们重新写出来。</p>
+<figure class="code"><div class="cap">steps/0978 · gelu 部分展开后的样子</div><pre>%67 = arith.addf %64, %66 : vector&lt;8x8xf32&gt;
+%68 = arith.mulf %67, %67 : vector&lt;8x8xf32&gt;
+%69 = arith.mulf %68, %67 : vector&lt;8x8xf32&gt;
+%70 = arith.mulf %69, %cst_15 : vector&lt;8x8xf32&gt;
+%71 = arith.addf %67, %70 : vector&lt;8x8xf32&gt;
+%72 = arith.mulf %71, %cst_16 : vector&lt;8x8xf32&gt;
+%73 = arith.cmpf ult, %72, %cst_11 : vector&lt;8x8xf32&gt;
+%74 = arith.select %73, %72, %cst_11 : vector&lt;8x8xi1&gt;, vector&lt;8x8xf32&gt;
+%75 = arith.cmpf ugt, %74, %cst_12 : vector&lt;8x8xf32&gt;
+%76 = arith.select %75, %74, %cst_12 : vector&lt;8x8xi1&gt;, vector&lt;8x8xf32&gt;
+%77 = math.absf %72 : vector&lt;8x8xf32&gt;
+%78 = arith.cmpf olt, %77, %cst_10 : vector&lt;8x8xf32&gt;
+%79 = arith.mulf %76, %76 : vector&lt;8x8xf32&gt;
+%80 = math.fma %79, %cst_3, %cst_4 : vector&lt;8x8xf32&gt;
+%81 = math.fma %79, %80, %cst_5 : vector&lt;8x8xf32&gt;
+%82 = math.fma %79, %81, %cst_6 : vector&lt;8x8xf32&gt;
+%83 = math.fma %79, %82, %cst_7 : vector&lt;8x8xf32&gt;
+%84 = math.fma %79, %83, %cst_8 : vector&lt;8x8xf32&gt;
+%85 = math.fma %79, %84, %cst_9 : vector&lt;8x8xf32&gt;
+%86 = arith.mulf %76, %85 : vector&lt;8x8xf32&gt;
+%87 = math.fma %79, %cst, %cst_0 : vector&lt;8x8xf32&gt;
+%88 = math.fma %79, %87, %cst_1 : vector&lt;8x8xf32&gt;
+%89 = math.fma %79, %88, %cst_2 : vector&lt;8x8xf32&gt;
+%90 = arith.divf %86, %89 : vector&lt;8x8xf32&gt;
+%91 = arith.select %78, %76, %90 : vector&lt;8x8xi1&gt;, vector&lt;8x8xf32&gt;
+%92 = arith.addf %91, %cst_17 : vector&lt;8x8xf32&gt;
+%93 = arith.mulf %67, %cst_18 : vector&lt;8x8xf32&gt;
+%94 = arith.mulf %93, %92 : vector&lt;8x8xf32&gt;</pre></figure>
+<div class="nb look"><div class="nbt">看点</div><ul><li><code>math.powf(x, 3)</code> 变成了两次乘法：<code>%68 = x*x</code>，<code>%69 = %68*x</code>。编译器看出指数是常数 3，就不必调用通用的幂函数。</li><li><code>math.tanh</code> 变成了一个有理多项式近似：先把输入夹在一个范围内（<code>cmpf / select</code>），再算一个分子多项式和一个分母多项式（那一串 <code>math.fma</code>），最后相除。对很小的输入，直接返回输入本身。</li><li>每一步都作用在 <code>vector&lt;8x8xf32&gt;</code> 上，所以 64 个 tanh 是一起算的。</li></ul></div>
+<h3 id="st19">步骤 19 · 降到 llvm 方言</h3><div class="step-meta">输入：vector + memref + scf &nbsp;→&nbsp; 输出：llvm 方言 &nbsp;·&nbsp; 负责的 pass：<code>convert-scf-to-cf</code>、<code>iree-convert-to-llvm</code></div><p>把剩下的结构全部换成接近 LLVM 的形式：<code>scf.for</code> 这种结构化循环变成基本块加跳转，memref 变成指针和地址计算，vector 与 arith 变成 llvm 的指令。这是 MLIR 这一侧的最后一步。</p>
+<figure class="code"><div class="cap">steps/0985 · 循环变成了条件跳转（前 4 处）</div><pre>cf.cond_br %9, ^bb1, ^bb36
+cf.br ^bb2(%c0 : index)
+cf.cond_br %11, ^bb3, ^bb35
+cf.br ^bb4(%c0 : index)</pre></figure>
+<figure class="code"><div class="cap">steps/0997 · 函数签名与三条 fma</div><pre>llvm.func @main_dispatch_0_matmul_17x64x32_f32(%arg0: !llvm.ptr {llvm.align = 16 : i64, llvm.noalias, llvm.nonnull, llvm.noundef}, %arg1: !llvm.ptr {llvm.align = 16 : i64, llvm.noalias, llvm.nonnull, llvm.noundef}, %arg2: !llvm.ptr {llvm.align = 16 : i64, llvm.noalias, llvm.nonnull, llvm.noundef}) -&gt; i32 {
+  …
+%597 = llvm.intr.fma(%587, %595, %596) : (vector&lt;8xf32&gt;, vector&lt;8xf32&gt;, vector&lt;8xf32&gt;) -&gt; vector&lt;8xf32&gt;
+%600 = llvm.intr.fma(%588, %598, %599) : (vector&lt;8xf32&gt;, vector&lt;8xf32&gt;, vector&lt;8xf32&gt;) -&gt; vector&lt;8xf32&gt;
+%603 = llvm.intr.fma(%589, %601, %602) : (vector&lt;8xf32&gt;, vector&lt;8xf32&gt;, vector&lt;8xf32&gt;) -&gt; vector&lt;8xf32&gt;</pre></figure>
+<div class="nb look"><div class="nbt">看点</div><ul><li>llvm 方言里共有 72 条 <code>llvm.intr.fma</code>，操作的都是 <code>vector&lt;8xf32&gt;</code>。</li><li>函数参数变成了 <code>!llvm.ptr</code>，即指针。IREE 按约定把绑定、工作组编号等信息通过这几个指针传进内核。</li><li>同一个内核，第 13 步时 46 行，到这里是 939 行：抽象被一层层兑现成了具体的指令。</li></ul></div>
+<h3 id="st20">步骤 20 · LLVM 生成 RISC-V 机器码</h3><div class="step-meta">输入：LLVM IR &nbsp;→&nbsp; 输出：RISC-V ELF &nbsp;·&nbsp; 负责的 pass：LLVM 后端（不是 MLIR pass）</div><p>MLIR 把 llvm 方言翻译成标准的 LLVM IR 文件，交给 LLVM 后端。LLVM 负责最后的指令选择、寄存器分配和指令调度，输出 RISC-V 汇编，再汇编链接成 ELF。</p>
+<figure class="code"><div class="cap">exe/…optimized.ll · LLVM IR 里的 8 路 fma</div><pre>define internal noundef i32 @main_dispatch_0_matmul_17x64x32_f32(ptr noalias nonnull readnone align 16 captures(none) %0, ptr noalias noundef nonnull readonly align 16 captures(none) %1, ptr noalias noundef nonnull readonly align 16 captures(none) %2) #0 !dbg !8 {
+  …
+%259 = tail call &lt;8 x float&gt; @llvm.fma.v8f32(&lt;8 x float&gt; %251, &lt;8 x float&gt; splat (float 0xBCB3E4B800000000), &lt;8 x float&gt; splat (float 0x3D4C266FC0000000)), !dbg !99
+%260 = tail call &lt;8 x float&gt; @llvm.fma.v8f32(&lt;8 x float&gt; %252, &lt;8 x float&gt; splat (float 0xBCB3E4B800000000), &lt;8 x float&gt; splat (float 0x3D4C266FC0000000)), !dbg !99</pre></figure>
+<figure class="code"><div class="cap">exe/…riscv_32.s · 内核汇编里 vfmadd.vv 附近</div><pre>  addi t0, a4, -1572
+  addi a1, a4, -1571
+  vfmul.vv v14, v8, v8
+  vmv.v.x v24, s8
+  vmv2r.v v16, v14
+  vfmadd.vf v16, fa0, v24
+  vmv.v.x v26, t4
+  vmv2r.v v10, v14
+  vfmadd.vf v10, ft0, v26
+  vmv.v.x v28, s9
+  vfmadd.vv v16, v14, v28
+  vmv.v.x v30, a0
+  vfmadd.vv v10, v14, v30</pre></figure>
+<div class="tw"><table><thead><tr><th>统计（只算内核函数本身）</th><th>条数</th></tr></thead><tbody><tr><td>全部指令</td><td>1,380（整个 .s 文件 2,303，其余属于链接进来的运行时辅助函数）</td></tr><tr><td><code>vfmadd.vv</code>：向量 × 向量 + 向量</td><td>57</td></tr><tr><td><code>vfmadd.vf</code>：向量 × 标量 + 向量</td><td>22</td></tr><tr><td>全部向量指令</td><td>502</td></tr><tr><td>标量浮点指令</td><td>16</td></tr><tr><td><code>vl2r.v</code> / <code>vs2r.v</code>：成组读回 / 存出向量寄存器</td><td>51 / 40</td></tr></tbody></table></div>
+<div class="nb look"><div class="nbt">看点</div><ul><li>第 17 步的 <code>vector.fma</code> 最终变成了 <code>vfmadd</code>。其中一部分是 <code>.vf</code> 形式：LLVM 发现 fma 的一个输入是由标量广播来的，就直接用“向量乘标量”的指令，省掉了广播。</li><li>一个 8 个 f32 的向量是 256 位，而 NPU 的向量寄存器是 128 位，所以每个向量占两个寄存器。这就是指令里 <code>m2</code>、<code>vl2r</code> 这类“2”的来源。</li><li>51 条 <code>vl2r.v</code> 和 40 条 <code>vs2r.v</code> 是在把向量寄存器存到栈上又读回来，大量的 <code>csrr vlenb</code> 是在计算栈上的地址。原因是寄存器不够用：RISC-V 向量扩展有 32 个向量寄存器，两个一组就只剩 16 组，而 8×8 的累加器一个就要占 8 组，再加上 A 列、B 行和各种临时值，只好借用内存周转。这叫寄存器溢出，是这个内核一个明显的性能改进点。</li></ul></div>
+<h3 id="st21">步骤 21 · 主机侧程序：从 hal 到 vm</h3><div class="step-meta">输入：stream + hal &nbsp;→&nbsp; 输出：vm 方言 → model.vmfb &nbsp;·&nbsp; 负责的 pass：<code>iree-hal-conversion</code>、<code>iree-vm-conversion</code> 等</div><p>内核编好之后，主机侧的调度逻辑，也就是分配内存、提交内核、等待完成，被翻译成 IREE 虚拟机的字节码，和内核 ELF 一起打包进 vmfb。</p>
+<figure class="code"><div class="cap">out/vm.mlir · 每次推理执行的 main（省略了常数与引用释放）</div><pre>vm.func private @main(%arg0: !vm.ref&lt;!hal.buffer_view&gt;) -&gt; !vm.ref&lt;!hal.buffer_view&gt; attributes {iree.reflection = {iree.abi.declaration = "sync func @main(%input0: tensor&lt;17x32xf32&gt;) -&gt; (%output0: tensor&lt;17x64xf32&gt;)"}, vm.unwind, vm.yield} {
+  %__device_1 = vm.global.load.ref @__device_1 : !vm.ref&lt;!hal.device&gt;
+  %__main_memoize_result_0_device_1 = vm.global.load.ref @__main_memoize_result_0_device_1 : !vm.ref&lt;!hal.command_buffer&gt;
+  %_utf8_input0_DCE99660CEB3F6B = vm.const.ref.rodata @_utf8_input0_DCE99660CEB3F6B : !vm.buffer
+  vm.call.variadic @hal.buffer_view.assert(%arg0, %_utf8_input0_DCE99660CEB3F6B, %c553648160, %c1, [%c17, %c32]) : (!vm.ref&lt;!hal.buffer_view&gt;, !vm.buffer, i32, i32, i64 ...)
+  %ref = vm.call @hal.buffer_view.buffer(%arg0) {nosideeffects} : (!vm.ref&lt;!hal.buffer_view&gt;) -&gt; !vm.ref&lt;!hal.buffer&gt;
+  %ref_1 = vm.call @hal.device.allocator(%__device_1) {nosideeffects} : (!vm.ref&lt;!hal.device&gt;) -&gt; !vm.ref&lt;!hal.allocator&gt;
+  %_utf8_tensor_FC1814BC4A58F22A = vm.const.ref.rodata @_utf8_tensor_FC1814BC4A58F22A : !vm.buffer
+  vm.call @hal.buffer.assert(%ref, %_utf8_tensor_FC1814BC4A58F22A, %ref_1, %c2176, %c16, %c3075) : (!vm.ref&lt;!hal.buffer&gt;, !vm.buffer, !vm.ref&lt;!hal.allocator&gt;, i64, i32, i32) -&gt; ()
+  %ref_2 = vm.call @hal.fence.create(%__device_1, %zero) : (!vm.ref&lt;!hal.device&gt;, i64) -&gt; !vm.ref&lt;!hal.fence&gt;
+  %ref_3 = vm.call @hal.device.queue.alloca(%__device_1, %c-1, %null, %ref_2, %zero, %c48, %c3075, %c4352, %zero) : (!vm.ref&lt;!hal.device&gt;, i64, !vm.ref&lt;!hal.fence&gt;, !vm.ref&lt;!hal.fence&gt;, i64, i32, i32, i64, i64) -&gt; !vm.ref&lt;!hal.buffer&gt;
+  %ref_4 = vm.call @hal.fence.create(%__device_1, %zero) : (!vm.ref&lt;!hal.device&gt;, i64) -&gt; !vm.ref&lt;!hal.fence&gt;
+  vm.call.variadic @hal.device.queue.execute.indirect(%__device_1, %c-1, %ref_2, %ref_4, %__main_memoize_result_0_device_1, %zero, [(%ref, %zero, %c2176), (%ref_3, %zero, %c4352)]) : (!vm.ref&lt;!hal.device&gt;, i64, !vm.ref&lt;!hal.fence&gt;, !vm.ref&lt;!hal.fence&gt;, !vm.ref&lt;!hal.command_buffer&gt;, i64, tuple&lt;!vm.ref&lt;!hal.buffer&gt;, i64, i64&gt; ...)
+  vm.call.variadic.yieldable @hal.fence.await(%c-1_0, %zero, %ref_4) {segment_sizes = dense&lt;[-1, -1, 1]&gt; : vector&lt;3xi16&gt;, segment_types = [i32, i64, !vm.ref&lt;!hal.fence&gt;]} : (i32, i64, !vm.ref&lt;!hal.fence&gt;) -&gt; ^bb1 (i32)
+^bb1(%0: i32):  // pred: ^bb0
+  vm.cond_br %0, ^bb3, ^bb2
+^bb2:  // pred: ^bb1
+  %ref_5 = vm.call.variadic @hal.buffer_view.create(%ref_3, %zero, %c4352, %c553648160, %c1, [%c17, %c64]) {nosideeffects} : (!vm.ref&lt;!hal.buffer&gt;, i64, i64, i32, i32, i64 ...) -&gt; !vm.ref&lt;!hal.buffer_view&gt;
+  vm.return %ref_5 : !vm.ref&lt;!hal.buffer_view&gt;
+^bb3:  // pred: ^bb1
+  vm.fail %0, "failed to wait on timepoint"</pre></figure>
+<div class="nb look"><div class="nbt">看点</div><ul><li>每次推理，主机上的 main 只做五件事：检查输入形状是 17×32、在 NPU 上申请 4352 字节的输出、提交命令、等待完成、把输出包装成 17×64 的 buffer_view 返回。</li><li>提交的命令缓冲 <code>@__main_memoize_result_0_device_1</code> 是在初始化时就录制好的，里面就是那一次 dispatch。因为形状固定，每次推理的命令都一样，录一次反复用。</li><li>这里没有任何矩阵乘或加法。主机只负责指挥，计算全部在 NPU 的内核里。</li></ul></div>
+<h3 id="st22">步骤 22 · 在 NPU 仿真器上运行</h3><div class="step-meta">输入：model.vmfb + 输入 &nbsp;→&nbsp; 输出：17×64 输出 &nbsp;·&nbsp; 负责的 pass：运行时，不属于编译</div><p>运行时加载 vmfb：IREE 虚拟机在主机上执行第 21 步的 main；HAL 驱动把 RISC-V ELF 和三块缓冲交给 MPACT 仿真器，仿真器逐条执行第 20 步的指令，结果写回输出缓冲。</p>
+<figure class="code"><div class="cap">运行命令与输出</div><pre>LD_LIBRARY_PATH=$PWD/runtime/sim bazel-bin/examples/toy-vit-aot/run_vit \
+  --vmfb=model.vmfb --input=ref_in.npy --ref=ref_out.npy --module=module
+
+Modules in context: ['hal', 'module']
+max abs diff: 2.384185791015625e-07
+SUCCESS: matches framework reference</pre></figure>
+<p>和 PyTorch 在 Mac 上算出的结果相比，1,088 个输出值的最大误差是 2.4e-07。误差来自浮点运算顺序不同，以及 tanh 用多项式近似，属于正常范围。</p>
+<h2 id="s4">4. 回顾：一张表看完全程</h2>
+<div class="tw"><table><thead><tr><th>步骤</th><th>所在层</th><th>发生了什么</th><th>fc1 + gelu 在这一步的样子</th></tr></thead><tbody><tr><td>1–2</td><td>PyTorch → FX</td><td>Python 变成静态图</td><td>linear + 9 个逐元素节点</td></tr><tr><td>3</td><td>torch</td><td>图变成 MLIR</td><td>permute + mm + add + gelu 各项</td></tr><tr><td>4</td><td>stablehlo</td><td>变成框架无关的格式</td><td>transpose + dot_general + 大量广播</td></tr><tr><td>5</td><td>linalg</td><td>变成循环描述</td><td>28 个 linalg 操作</td></tr><tr><td>6</td><td>linalg</td><td>确定设备，贴标签</td><td>矩阵乘标 NPU，其余标主机</td></tr><tr><td>7</td><td>linalg</td><td>全局优化</td><td>转置被吸收，偏置在编译期算好</td></tr><tr><td>8</td><td>linalg</td><td>融合</td><td>3 个操作：清零、矩阵乘、融合的 gelu</td></tr><tr><td>9</td><td>flow</td><td>切出内核</td><td>1 个 flow.executable，整体放 NPU</td></tr><tr><td>10</td><td>stream</td><td>定内存、定顺序</td><td>4 块缓冲，1 次异步提交</td></tr><tr><td>11</td><td>hal</td><td>定内核的内存接口</td><td>3 个绑定，常量打包</td></tr><tr><td>12</td><td>linalg + 配置</td><td>选分块参数</td><td>8×8 向量块，16 行一组</td></tr><tr><td>13–14</td><td>scf</td><td>切循环</td><td>五层循环</td></tr><tr><td>15</td><td>vector</td><td>向量化</td><td>vector.contract 8×8</td></tr><tr><td>16</td><td>memref</td><td>缓冲化</td><td>在真实内存上读写</td></tr><tr><td>17–18</td><td>vector</td><td>拆成一维，展开数学函数</td><td>每步 k 8 条 fma；tanh 变多项式</td></tr><tr><td>19</td><td>llvm</td><td>降到 LLVM 方言</td><td>72 条 llvm.intr.fma</td></tr><tr><td>20</td><td>RISC-V</td><td>LLVM 生成机器码</td><td>1,380 条指令，79 条 vfmadd</td></tr><tr><td>21</td><td>vm</td><td>主机调度程序</td><td>检查、分配、提交、等待、返回</td></tr><tr><td>22</td><td>运行</td><td>仿真执行</td><td>最大误差 2.38e-07</td></tr></tbody></table></div>
+<p>如果只记住一件事：<b>每一步只做一件事，而形状 17×32 × 64×32 → 17×64 从头到尾都在。</b>凭形状，你可以在任意一层的 IR 里找到同一个运算，看它此刻变成了什么。</p>
+<h2 id="s5">5. 自己动手</h2>
+<p>以下命令都在容器 <code>coralnpu-work</code> 里、<code>~/work/coralnpu-compiler</code> 目录下执行。先定义一个变量省去重复参数：</p>
+<figure class="code"><pre>CC="bazel-bin/compiler/tools/coralnpu-compile \
+  --iree-hal-target-device=local --iree-hal-local-target-device-backends=llvm-cpu \
+  --iree-llvmcpu-target-cpu-features=host --iree-hal-target-device=coralnpu"</pre></figure>
+<div class="tw"><table><thead><tr><th>想看什么</th><th>命令</th></tr></thead><tbody><tr><td>停在某个阶段看整个模块</td><td><code>$CC --compile-to=input|flow|stream|hal|vm model.mlir -o x.mlir</code></td></tr><tr><td>每个 pass 之后都打印</td><td><code>$CC --mlir-print-ir-after-all --mlir-elide-elementsattrs-if-larger=8 model.mlir -o /dev/null 2&gt; all.txt</code></td></tr><tr><td>只看某几个 pass 之后</td><td><code>$CC --mlir-print-ir-after=iree-codegen-generic-vectorization,iree-convert-to-llvm …</code></td></tr><tr><td>只打印改动了 IR 的 pass</td><td><code>加上 --mlir-print-ir-after-change</code></td></tr><tr><td>每个 pass 用了多久</td><td><code>$CC --mlir-timing --mlir-timing-display=list …</code></td></tr><tr><td>保留每个内核的 .ll / .s / .o</td><td><code>$CC --iree-hal-dump-executable-files-to=exe/ …</code></td></tr><tr><td>看设备分配汇总</td><td><code>$CC --coralnpu-dump-affinity-profile-format=pretty …</code></td></tr></tbody></table></div>
+<p>建议的练习：把 <code>lin_gelu.py</code> 里的 17 改成 64，重新编译，看第 13 步的工作组数、第 15 步的掩码怎么变；或者删掉 gelu 只留 Linear，看第 8 步融合后还剩什么。</p>
+<p>本文用到的全部产物都在 <code>toy-vit/mlir-walkthrough/out/</code>：<code>steps/</code> 下是每个改动了 IR 的 pass 之后的完整 IR，文件名是“执行序号_pass 名”；<code>exe/</code> 下是内核的各级产物。</p>
+<h2 id="s6">6. 术语表</h2>
+<dl class="gl"><dt>IR</dt><dd>中间表示。编译器内部用来表示程序的格式。</dd><dt>MLIR</dt><dd>一种可以容纳多种抽象层次的 IR 框架，本身是 LLVM 项目的一部分。</dd><dt>方言 dialect</dt><dd>一组相关操作和类型的集合，比如 linalg、vector、llvm。</dd><dt>操作 op</dt><dd>IR 里的一条语句，形如 方言.名字。</dd><dt>SSA</dt><dd>静态单赋值。每个值只被赋值一次，便于分析数据流。</dd><dt>region / block</dt><dd>操作内部包含的代码块。block 可以有参数，以 ^bb 命名。</dd><dt>attribute</dt><dd>贴在操作上的附加信息，不参与计算。</dd><dt>affine_map</dt><dd>从循环下标到数组下标的线性映射。</dd><dt>pass</dt><dd>一道把 IR 改写成另一份 IR 的工序。</dd><dt>lowering 降级</dt><dd>把 IR 从高抽象层次改写到低抽象层次的过程。</dd><dt>canonicalize / cse</dt><dd>化简 / 公共子表达式消除，两种最常用的清理 pass。</dd><dt>tensor</dt><dd>张量值。不可变，没有内存位置的概念。</dd><dt>memref</dt><dd>内存引用。一块有地址、有布局的真实内存。</dd><dt>缓冲化 bufferization</dt><dd>把 tensor 换成 memref 的过程。</dd><dt>融合 fusion</dt><dd>把相邻的运算合并，中间结果不写回内存。</dd><dt>分块 tiling</dt><dd>把一个大循环切成多层小循环，让数据能装进寄存器或缓存。</dd><dt>向量化 vectorization</dt><dd>把逐个元素的运算换成一次处理一排元素的向量运算。</dd><dt>掩码 mask</dt><dd>指明向量里哪些位置有效，用来处理凑不满一整排的边界。</dd><dt>dispatch / 内核</dt><dd>一段可以被独立下发到某个设备执行的代码。</dd><dt>工作组 workgroup</dt><dd>内核执行时的并行单位，每个处理输出的一部分。</dd><dt>fma</dt><dd>融合乘加，一条指令完成 a×b+c。</dd><dt>寄存器溢出 spill</dt><dd>寄存器不够用时，把值临时存到内存再读回。</dd><dt>HAL</dt><dd>硬件抽象层。IREE 用它统一描述不同设备。</dd><dt>vmfb</dt><dd>IREE 的模块文件，内含调度字节码、内核二进制和常量。</dd></dl></main></body></html>

@@ -1,0 +1,34 @@
+util.func public @main(%arg0: !hal.buffer_view) -> !hal.buffer_view attributes {iree.abi.stub, iree.reflection = {iree.abi.declaration = "sync func @main(%input0: tensor<17x32xf32>) -> (%output0: tensor<17x64xf32>)"}} {
+  %__device_1 = util.global.load immutable @__device_1 : !hal.device
+  %buffer_usage = hal.buffer_usage<"TransferSource|TransferTarget|Transfer|DispatchStorageRead|DispatchStorageWrite|DispatchStorage"> : i32
+  %memory_type = hal.memory_type<"DeviceVisible|DeviceLocal"> : i32
+  %c0 = arith.constant 0 : index
+  %c4352 = arith.constant 4352 : index
+  %c2176 = arith.constant 2176 : index
+  %c32 = arith.constant 32 : index
+  %c17 = arith.constant 17 : index
+  %c-1_i64 = arith.constant -1 : i64
+  %0 = util.null : !hal.fence
+  %c0_i64 = arith.constant 0 : i64
+  %c-1_i32 = arith.constant -1 : i32
+  %c64 = arith.constant 64 : index
+  %element_type_f32 = hal.element_type<f32> : i32
+  %dense_row_major = hal.encoding_type<dense_row_major> : i32
+  hal.buffer_view.assert<%arg0 : !hal.buffer_view> message("input0") shape([%c17, %c32]) type(%element_type_f32) encoding(%dense_row_major)
+  %buffer = hal.buffer_view.buffer<%arg0 : !hal.buffer_view> : !hal.buffer
+  %allocator = hal.device.allocator<%__device_1 : !hal.device> : !hal.allocator
+  hal.buffer.assert<%buffer : !hal.buffer> message("tensor") allocator(%allocator : !hal.allocator) minimum_length(%c2176) type(DeviceVisible) usage("TransferSource|TransferTarget|Transfer|DispatchStorageRead|DispatchStorageWrite|DispatchStorage")
+  %fence = hal.fence.create device(%__device_1 : !hal.device) flags("None") : !hal.fence
+  %transient_buffer = hal.device.queue.alloca<%__device_1 : !hal.device> affinity(%c-1_i64) wait(%0) signal(%fence) pool(%c0_i64) type(%memory_type) usage(%buffer_usage) flags("None") : !hal.buffer{%c4352}
+  %1 = util.call @__main_memoize_lookup(%__device_1, %c-1_i64) : (!hal.device, i64) -> !hal.command_buffer
+  %fence_0 = hal.fence.create device(%__device_1 : !hal.device) flags("None") : !hal.fence
+  hal.device.queue.execute.indirect<%__device_1 : !hal.device> affinity(%c-1_i64) wait(%fence) signal(%fence_0) commands(%1) bindings([
+    (%buffer : !hal.buffer)[%c0, %c2176], 
+    (%transient_buffer : !hal.buffer)[%c0, %c4352]
+  ]) flags("None")
+  %status = hal.fence.await until([%fence_0]) timeout_millis(%c-1_i32) flags("None") : i32
+  util.status.check_ok %status, "failed to wait on timepoint"
+  %view = hal.buffer_view.create buffer(%transient_buffer : !hal.buffer)[%c0, %c4352] shape([%c17, %c64]) type(%element_type_f32) encoding(%dense_row_major) : !hal.buffer_view
+  util.return %view : !hal.buffer_view
+}
+

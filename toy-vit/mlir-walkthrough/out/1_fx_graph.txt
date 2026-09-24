@@ -1,0 +1,15 @@
+
+
+
+def forward(self, p_fc_weight, p_fc_bias, x):
+    linear = torch.ops.aten.linear.default(x, p_fc_weight, p_fc_bias);  x = p_fc_weight = p_fc_bias = None
+    mul = torch.ops.aten.mul.Tensor(linear, 0.5)
+    pow_1 = torch.ops.aten.pow.Tensor_Scalar(linear, 3)
+    mul_1 = torch.ops.aten.mul.Tensor(pow_1, 0.044715);  pow_1 = None
+    add = torch.ops.aten.add.Tensor(linear, mul_1);  linear = mul_1 = None
+    mul_2 = torch.ops.aten.mul.Tensor(add, 0.7978845608028654);  add = None
+    tanh = torch.ops.aten.tanh.default(mul_2);  mul_2 = None
+    add_1 = torch.ops.aten.add.Tensor(tanh, 1.0);  tanh = None
+    mul_3 = torch.ops.aten.mul.Tensor(mul, add_1);  mul = add_1 = None
+    return (mul_3,)
+    

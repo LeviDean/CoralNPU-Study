@@ -1,0 +1,38 @@
+========================================================================
+Execution Profile by Affinity:
+========================================================================
+  Affinity: Default (CPU)
+    Dispatches: 0 (0.0%)
+      Static:    0 (0.0%)
+      Dynamic:   0 (0.0%)
+    Estimated Static Data Size: 0.00 MB
+    Estimated Static Elements: 0.00 M
+    Estimated Static Work (Op-Bytes): 0.00 M (0.0%)
+    Estimated Static Work (Op-Elems): 0.00 M (0.0%)
+    Fills:  0
+    Copies: 1
+  Affinity: local
+    Dispatches: 15 (45.5%)
+      Static:    15 (100.0%)
+      Dynamic:   0 (0.0%)
+    Estimated Static Data Size: 0.07 MB
+    Estimated Static Elements: 0.02 M (4.00 bytes/element)
+    Estimated Static Work (Op-Bytes): 1.21 M (19.1%)
+    Estimated Static Work (Op-Elems): 0.30 M (19.1%)
+    Fills:  0
+    Copies: 1
+  Affinity: coralnpu
+    Dispatches: 18 (54.5%)
+      Static:    18 (100.0%)
+      Dynamic:   0 (0.0%)
+    Estimated Static Data Size: 0.23 MB
+    Estimated Static Elements: 0.06 M (4.00 bytes/element)
+    Estimated Static Work (Op-Bytes): 5.13 M (80.9%)
+    Estimated Static Work (Op-Elems): 1.28 M (80.9%)
+    Fills:  0
+    Copies: 1
+========================================================================
+/home/builder/work/vit-torch/out/vit.mlir:1:1: warning: Executable benchmarks were requested but there are multiple devices in the module and the pass does not support that yet.
+
+module {
+^

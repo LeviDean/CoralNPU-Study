@@ -1,0 +1,33 @@
+util.initializer {
+  %c0 = arith.constant 0 : index
+  %c0_i64 = arith.constant 0 : i64
+  %0 = stream.timepoint.immediate => !stream.timepoint
+  %c8192 = arith.constant 8192 : index
+  %c256 = arith.constant 256 : index
+  %buffer_cst = util.buffer.constant {alignment = 64 : index} : !util.buffer = #util.composite<8448xi8, [
+    dense_resource<__elided__> : tensor<64xf32>,
+    dense_resource<torch_tensor_64_32_torch.float32> : tensor<64x32xf32>,
+]>
+  %c8448 = arith.constant 8448 : index
+  %did_map, %result = stream.resource.try_map on(#hal.device.affinity<@__device_1>) %buffer_cst[%c0] : !util.buffer -> i1, !stream.resource<constant>{%c8448}
+  %1:2 = scf.if %did_map -> (!stream.timepoint, !stream.resource<constant>) {
+    scf.yield %0, %result : !stream.timepoint, !stream.resource<constant>
+  } else {
+    %3 = stream.resource.alloc uninitialized on(#hal.device.affinity<@__device_1>) : !stream.resource<constant>{%c8448}
+    %file = stream.file.constant on(#hal.device.affinity<@__device_1>) %buffer_cst[%c0 for %c8448] : !util.buffer{%c8448} -> !stream.file
+    %4 = stream.file.read on(#hal.device.affinity<@__device_1>) await(%0) => %file[%c0_i64], %3[%c0], %c8448 : !stream.file -> !stream.resource<constant>{%c8448} => !stream.timepoint
+    scf.yield %4, %3 : !stream.timepoint, !stream.resource<constant>
+  }
+  %2 = stream.timepoint.await sync %1#0 => %1#1 : !stream.resource<constant>{%c8448}
+  util.global.store %2, @__constant_tensor_64x32xf32 : !stream.resource<constant>
+  util.global.store %c8448, @__constant_tensor_64x32xf32__storage_size : index
+  util.global.store %c256, @__constant_tensor_64x32xf32__offset : index
+  util.global.store %c8192, @__constant_tensor_64x32xf32__length : index
+  util.global.store %2, @__hoisted_tensor_64xf32 : !stream.resource<constant>
+  util.global.store %c8448, @__hoisted_tensor_64xf32__storage_size : index
+  util.global.store %c0, @__hoisted_tensor_64xf32__offset : index
+  util.global.store %c256, @__hoisted_tensor_64xf32__length : index
+  util.global.store %0, @__hoisted_tensor_64xf32__timepoint : !stream.timepoint
+  util.return
+}
+
